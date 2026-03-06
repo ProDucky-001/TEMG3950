@@ -1,5 +1,29 @@
 # How to run the voice classifier and input a file
 
+The app uses **[ai-audio-detector](https://pypi.org/project/ai-audio-detector/)** (Benford's Law + spectral features, ensemble ML) to classify audio as human or AI-generated.
+
+## Install
+
+```bash
+pip install ai-audio-detector
+# or
+pip install -r requirements.txt
+```
+
+**Optional (Ubuntu/Debian):** `sudo apt-get install libsndfile1 ffmpeg`  
+**Optional (macOS):** `brew install libsndfile ffmpeg`
+
+## First-time: train models
+
+1. Put audio files in two folders: **human** and **AI**.
+2. From this project folder, run:
+
+```bash
+ai-audio-detector --train --human-dir path/to/human_audio --ai-dir path/to/ai_audio
+```
+
+Models are saved under `models/ai_audio_detector.joblib` in this folder. You only need to train once (or when you want to add more data).
+
 ## Option 1: Interactive (type or paste file path)
 
 1. Open a terminal (PowerShell or Command Prompt) in this folder.
@@ -26,14 +50,14 @@ python predict_voice.py "C:\path\to\your\file.mp3"
 
 ## Supported formats
 
-- MP3, WAV, FLAC, OGG, M4A
+WAV, MP3, FLAC, OGG, M4A, AAC.
 
 ## Note
 
-If you see "No trained checkpoint found", the model is using random weights. To get real human vs AI classification, train first:
+If you see "No trained models found", train first with:
 
 ```bash
-python train_voice_classifier.py --human_dir path/to/human_audio --ai_dir path/to/ai_audio --epochs 20
+ai-audio-detector --train --human-dir path/to/human_audio --ai-dir path/to/ai_audio
 ```
 
-Then run the classifier again; it will load `checkpoints/voice_classifier.pt` automatically.
+Then run the classifier again; it will use `models/ai_audio_detector.joblib` in this folder.

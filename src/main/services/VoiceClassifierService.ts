@@ -10,7 +10,7 @@ const SCRIPT_NAME = 'classify_audio_json.py'
 
 /**
  * Run the Python voice classifier on an audio file.
- * Requires the project to contain the Wav2Vec2 voice classifier (classify_audio_json.py, voice_bot.py).
+ * Uses ai-audio-detector (classify_audio_json.py + voice_bot.py). Requires Python and: pip install ai-audio-detector
  */
 export function classifyAudioFile(audioPath: string): Promise<VoiceClassificationResult> {
   return new Promise((resolve, reject) => {
@@ -34,12 +34,15 @@ export function classifyAudioFile(audioPath: string): Promise<VoiceClassificatio
     })
 
     proc.on('error', (err) => {
-      reject(new Error(`Voice classifier failed to start: ${err.message}. Ensure Python and dependencies (torch, torchaudio, soundfile, imageio-ffmpeg) are installed.`))
+      reject(new Error(`Voice classifier failed to start: ${err.message}. Ensure Python and ai-audio-detector are installed (pip install ai-audio-detector).`))
     })
 
     proc.on('close', (code) => {
       try {
-        const parsed = JSON.parse(stdout.trim()) as VoiceClassificationResult & { error?: string }
+        // ai-audio-detector may print "No trained models found..." to stdout before our JSON; extract last JSON line
+        const lines = stdout.trim().split(/\r?\n/)
+        const jsonLine = lines.filter((l) => l.trim().startsWith('{')).pop() ?? stdout.trim()
+        const parsed = JSON.parse(jsonLine) as VoiceClassificationResult & { error?: string }
         if (parsed.error != null) {
           reject(new Error(parsed.error))
           return

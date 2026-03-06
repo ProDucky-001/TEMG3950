@@ -4,9 +4,12 @@ Output-only JSON for voice classification. Used by the Electron app.
 Usage: python classify_audio_json.py <path_to_audio>
 Prints one JSON object to stdout: {"label":"human"|"ai","prob_human":float,"prob_ai":float,"checkpoint_loaded":bool}
 """
+import warnings
+warnings.filterwarnings("ignore", category=FutureWarning)
 
 import json
 import sys
+
 
 def main():
     if len(sys.argv) < 2:
@@ -21,6 +24,7 @@ def main():
     except Exception as e:
         print(json.dumps({"error": str(e), "label": "error"}), flush=True)
         sys.exit(1)
+
 
 if __name__ == "__main__":
     main()

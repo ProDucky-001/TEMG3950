@@ -8,19 +8,19 @@ Then type or paste the path to an MP3/WAV/etc. file when prompted.
 import os
 import sys
 
-# Fail fast with clear instructions if torchaudio is missing
+# Fail fast if ai-audio-detector is missing
 try:
-    import torchaudio  # noqa: F401
+    import ai_audio_detector  # noqa: F401
 except ModuleNotFoundError:
-    print("torchaudio is not installed. Install it with:")
-    print(f"  {sys.executable} -m pip install torchaudio")
+    print("ai-audio-detector is not installed. Install it with:")
+    print("  pip install ai-audio-detector")
     print("  or:  pip install -r requirements.txt")
     sys.exit(1)
 
 # Ensure project root is on path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from voice_bot import VoiceBot, DEFAULT_CHECKPOINT_PATH
+from voice_bot import VoiceBot
 
 
 def main():
@@ -30,10 +30,10 @@ def main():
     print("Supported: MP3, WAV, FLAC, OGG, M4A")
     print()
 
-    bot = VoiceBot(checkpoint_path=DEFAULT_CHECKPOINT_PATH)
+    bot = VoiceBot()
     if not bot._checkpoint_loaded:
-        print("Note: No trained checkpoint found. Results use random weights.")
-        print("      Train with: python train_voice_classifier.py --human_dir ... --ai_dir ...")
+        print("Note: No trained models found. Train first with:")
+        print('      ai-audio-detector --train --human-dir path/to/human_audio --ai-dir path/to/ai_audio')
         print()
 
     # If file path given as argument, classify it and exit

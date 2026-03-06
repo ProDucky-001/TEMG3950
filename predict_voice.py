@@ -1,12 +1,11 @@
 """
 Inference script for AI vs Human voice detection.
 
-Uses the integrated Voice Bot; supports any MP3 or other audio format.
+Uses ai-audio-detector (Benford's Law + ensemble ML). Supports WAV, MP3, FLAC, OGG, M4A, AAC.
 
 Usage:
     python predict_voice.py --audio path/to/audio.mp3
     python predict_voice.py path/to/audio.mp3
-    python predict_voice.py --audio path/to/audio.wav --checkpoint checkpoints/voice_classifier.pt
 """
 
 import argparse
@@ -16,18 +15,18 @@ import sys
 # Ensure project root is on path when run as script
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from voice_bot import VoiceBot, DEFAULT_CHECKPOINT_PATH
+from voice_bot import VoiceBot
 
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Classify audio (any MP3/WAV/etc.) as human or AI-generated voice."
+        description="Classify audio as human or AI-generated (ai-audio-detector)."
     )
     parser.add_argument(
         "audio",
         nargs="?",
         type=str,
-        help="Path to audio file (MP3, WAV, FLAC, etc.)",
+        help="Path to audio file (WAV, MP3, FLAC, OGG, M4A, AAC)",
     )
     parser.add_argument(
         "--audio",
@@ -35,13 +34,8 @@ def main():
         dest="audio_opt",
         help="Path to audio file (alternative to positional)",
     )
-    parser.add_argument(
-        "--checkpoint",
-        type=str,
-        default=DEFAULT_CHECKPOINT_PATH,
-        help="Path to trained checkpoint",
-    )
-    parser.add_argument("--config", type=str, default=None)
+    parser.add_argument("--checkpoint", type=str, default=None, help="Ignored (API compat)")
+    parser.add_argument("--config", type=str, default=None, help="Ignored (API compat)")
     args = parser.parse_args()
 
     audio_path = args.audio_opt or args.audio
@@ -52,13 +46,10 @@ def main():
         print(f"Error: File not found: {audio_path}", file=sys.stderr)
         sys.exit(1)
 
-    bot = VoiceBot(
-        checkpoint_path=args.checkpoint,
-        config_path=args.config,
-    )
+    bot = VoiceBot(checkpoint_path=args.checkpoint, config_path=args.config)
     if not bot._checkpoint_loaded:
         print(
-            "WARNING: No checkpoint loaded. Train with: python train_voice_classifier.py --human_dir ... --ai_dir ...",
+            "WARNING: No trained models found. Train with: ai-audio-detector --train --human-dir ... --ai-dir ...",
             file=sys.stderr,
         )
 
