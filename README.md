@@ -40,6 +40,26 @@ Described in example.py
 ```
 python example.py
 ```
+
+### AI vs Human Voice Classification (Scam Copilot)
+
+Differentiate AI-generated (synthetic/TTS) voice from real human voice for scam detection:
+
+**1. Train** on labeled data (human and AI voice samples):
+```bash
+# Using separate directories
+python train_voice_classifier.py --human_dir path/to/human_audio --ai_dir path/to/ai_audio --epochs 20
+
+# Using a CSV file (columns: path, label where 0=human, 1=AI)
+python train_voice_classifier.py --data_csv path/to/labels.csv --epochs 20
+```
+
+**2. Predict** on new audio:
+```bash
+python predict_voice.py --audio path/to/audio.wav --checkpoint checkpoints/voice_classifier.pt
+```
+
+**Data requirements:** 16 kHz audio (wav, mp3, flac). More diverse samples (different TTS systems, speakers) improve generalization.
  
 ## Code Style
 I follow [PEP-8](https://www.python.org/dev/peps/pep-0008/) for code style. Especially the style of docstrings is important to generate documentation.  

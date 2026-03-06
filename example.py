@@ -46,6 +46,7 @@ if __name__ == '__main__':
     with open("config.json", "r", encoding="utf-8") as f:
         config = Config(**json.load(f))
 
+    # --- Original Wav2Vec2 pretraining ---
     model = Wav2Vec2Framework(config, feature_extractor, encoder).to(device)
     criterion = Wav2vec2Loss(config)
 
@@ -53,5 +54,18 @@ if __name__ == '__main__':
     model_out = model(inputs, input_lengths)
     loss = criterion(*model_out)
 
-    print(loss)
+    print("Pretraining loss:", loss)
     loss.backward()
+
+    # --- AI vs Human voice classification (Scam Copilot) ---
+    from model import Wav2Vec2VoiceClassifier
+
+    voice_model = Wav2Vec2VoiceClassifier(config, feature_extractor, encoder).to(device)
+    logits = voice_model(inputs, input_lengths)
+    probs = torch.softmax(logits, dim=-1)
+    preds = logits.argmax(dim=-1)
+
+    print("\nVoice classification (0=human, 1=AI):")
+    print("  Logits:", logits[0].tolist())
+    print("  Probs:", probs[0].tolist())
+    print("  Preds:", preds.tolist())
