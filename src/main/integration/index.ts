@@ -1,0 +1,8 @@
+export { PlatformSpecificManager } from './PlatformSpecificManager'
+export type { ActiveAppInfo, PlatformCapabilities } from './PlatformSpecificManager'
+export { PrivacyManager } from './PrivacyManager'
+export { ContentExtractor } from './ContentExtractor'
+export { ApplicationIntegrator } from './ApplicationIntegrator'
+export { AppMonitorManager } from './AppMonitorManager'
+export type { AppMonitorManagerOptions } from './AppMonitorManager'
+export { getAppIdFromProcessName, getContentSourceType } from './appMapping'

@@ -1,0 +1,131 @@
+.threat-popup-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 16px;
+}
+
+.threat-popup {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow);
+  max-width: 440px;
+  width: 100%;
+  max-height: 90vh;
+  overflow-y: auto;
+}
+
+.threat-popup-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--border);
+}
+
+.threat-popup-title {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.threat-popup-close {
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  font-size: 24px;
+  line-height: 1;
+  padding: 4px;
+  border-radius: var(--radius);
+}
+
+.threat-popup-close:hover {
+  color: var(--text-primary);
+  background: var(--bg-tertiary);
+}
+
+.threat-popup-risk {
+  padding: 16px 20px;
+}
+
+.threat-popup-risk-label {
+  display: flex;
+  justify-content: space-between;
+  font-size: 14px;
+  margin-bottom: 8px;
+}
+
+.threat-popup-risk-value {
+  font-weight: 700;
+}
+
+.threat-popup-progress-wrap {
+  height: 8px;
+  background: var(--bg-tertiary);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.threat-popup-progress {
+  height: 100%;
+  border-radius: 4px;
+  transition: width 0.3s ease;
+}
+
+.threat-popup-severity {
+  padding: 0 20px 12px;
+  margin: 0;
+  font-size: 13px;
+  text-transform: capitalize;
+}
+
+.threat-popup-message,
+.threat-popup-link,
+.threat-popup-recommendation {
+  padding: 0 20px 16px;
+  font-size: 14px;
+}
+
+.threat-popup-message strong,
+.threat-popup-link strong,
+.threat-popup-recommendation strong {
+  display: block;
+  margin-bottom: 4px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+.threat-popup-message p,
+.threat-popup-link p,
+.threat-popup-recommendation p {
+  margin: 0;
+  color: var(--text-primary);
+}
+
+.threat-popup-link-url {
+  word-break: break-all;
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+
+.threat-popup-actions {
+  display: flex;
+  gap: 12px;
+  padding: 16px 20px;
+  border-top: 1px solid var(--border);
+}
+
+.threat-popup-actions .btn {
+  flex: 1;
+}
+
+.threat-popup-actions .btn-ghost {
+  flex: 0;
+}

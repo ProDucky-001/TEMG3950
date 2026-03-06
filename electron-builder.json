@@ -1,0 +1,22 @@
+{
+  "appId": "com.scamshield.app",
+  "productName": "ScamShield",
+  "directories": {
+    "output": "release"
+  },
+  "files": [
+    "out/**/*",
+    "assets/**/*"
+  ],
+  "mac": {
+    "category": "public.app-category.utilities",
+    "target": ["dmg", "zip"]
+  },
+  "win": {
+    "target": ["nsis", "portable"]
+  },
+  "nsis": {
+    "oneClick": false,
+    "allowToChangeInstallationDirectory": true
+  }
+}

@@ -1,0 +1,98 @@
+.onboarding {
+  min-height: 100vh;
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+.onboarding-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 32px;
+  max-width: 480px;
+  width: 100%;
+  box-shadow: var(--shadow);
+}
+
+.onboarding-progress {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+  margin-bottom: 24px;
+}
+
+.onboarding-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--border);
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.onboarding-dot:hover {
+  background: var(--text-muted);
+}
+
+.onboarding-dot.active {
+  background: var(--accent);
+  transform: scale(1.2);
+}
+
+.onboarding-title {
+  margin: 0 0 16px 0;
+  font-size: 22px;
+  font-weight: 600;
+}
+
+.onboarding-body {
+  margin: 0 0 16px 0;
+  font-size: 15px;
+  line-height: 1.6;
+  color: var(--text-secondary);
+}
+
+.onboarding-list {
+  margin: 0 0 24px 0;
+  padding-left: 20px;
+  color: var(--text-secondary);
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.onboarding-list li {
+  margin-bottom: 8px;
+}
+
+.onboarding-actions {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 24px;
+}
+
+.onboarding-actions .btn {
+  padding: 10px 20px;
+  border-radius: var(--radius);
+  font-size: 14px;
+  text-decoration: none;
+  border: 1px solid transparent;
+}
+
+.onboarding-skip {
+  margin-top: 16px;
+  font-size: 14px;
+}
+
+.onboarding-skip a {
+  color: var(--text-muted);
+  text-decoration: none;
+}
+
+.onboarding-skip a:hover {
+  color: var(--accent);
+}

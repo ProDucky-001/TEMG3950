@@ -1,0 +1,6 @@
+export { EmailDetector } from './EmailDetector'
+export { MessageAppDetector } from './MessageAppDetector'
+export { SocialMediaDetector } from './SocialMediaDetector'
+export { DocumentDetector } from './DocumentDetector'
+export type { SourceDetector } from './BaseSourceDetector'
+export { BaseSourceDetector } from './BaseSourceDetector'
