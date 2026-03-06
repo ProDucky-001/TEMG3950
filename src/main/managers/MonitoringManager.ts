@@ -24,6 +24,7 @@ export class MonitoringManager {
   }
 
   async start(): Promise<void> {
+    this.stop()
     const settings = this.settingsManager.getSettings()
     this.enabled = settings.monitoringEnabled
 

@@ -41,25 +41,40 @@ Described in example.py
 python example.py
 ```
 
-### AI vs Human Voice Classification (Scam Copilot)
+### Voice Bot: Human vs AI Voice (Scam Copilot)
 
-Differentiate AI-generated (synthetic/TTS) voice from real human voice for scam detection:
+**Integrated bot** that distinguishes **any MP3** (or WAV/FLAC/OGG/M4A) as human or AI-generated voice.
+
+**Use in your app:**
+```python
+from voice_bot import VoiceBot
+
+bot = VoiceBot()  # optional: checkpoint_path=..., config_path=...
+result = bot.classify("call_recording.mp3")
+# result["label"]     -> "human" | "ai"
+# result["prob_human"] -> 0.92
+# result["prob_ai"]    -> 0.08
+
+if bot.is_ai("suspicious.mp3"):
+    print("Possible synthetic voice")
+```
+
+**CLI** (any audio format, including any form of MP3):
+```bash
+python predict_voice.py path/to/audio.mp3
+python predict_voice.py --audio recording.mp3 --checkpoint checkpoints/voice_classifier.pt
+
+# Or run the bot module directly
+python -m voice_bot recording.mp3
+```
 
 **1. Train** on labeled data (human and AI voice samples):
 ```bash
-# Using separate directories
 python train_voice_classifier.py --human_dir path/to/human_audio --ai_dir path/to/ai_audio --epochs 20
-
-# Using a CSV file (columns: path, label where 0=human, 1=AI)
 python train_voice_classifier.py --data_csv path/to/labels.csv --epochs 20
 ```
 
-**2. Predict** on new audio:
-```bash
-python predict_voice.py --audio path/to/audio.wav --checkpoint checkpoints/voice_classifier.pt
-```
-
-**Data requirements:** 16 kHz audio (wav, mp3, flac). More diverse samples (different TTS systems, speakers) improve generalization.
+**2. Predict** on new audio (MP3, WAV, FLAC, OGG, M4A supported; ffmpeg on PATH enables all MP3 variants if torchaudio fails).
  
 ## Code Style
 I follow [PEP-8](https://www.python.org/dev/peps/pep-0008/) for code style. Especially the style of docstrings is important to generate documentation.  

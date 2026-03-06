@@ -4,6 +4,7 @@ import type { Settings, Alert, Statistics } from '../shared/types'
 import type { LinkDetectionResult } from '../shared/link-detection-types'
 import type { AIDetectionResult, ContentSource } from '../shared/ai-detection-types'
 import type { PrivacySummary } from '../shared/integration-types'
+import type { VoiceClassificationResult } from '../shared/voice-types'
 
 export interface ScamShieldAPI {
   // Settings
@@ -32,6 +33,9 @@ export interface ScamShieldAPI {
 
   // AI content detection
   scanContent: (input: { text: string; source?: ContentSource; metadata?: Record<string, unknown>; direction?: 'incoming' | 'outgoing' }) => Promise<AIDetectionResult>
+
+  // Voice classification (human vs AI-generated audio)
+  classifyVoice: () => Promise<VoiceClassificationResult | null>
 
   // App integration
   getPrivacySummary: () => Promise<PrivacySummary>
@@ -83,6 +87,9 @@ const api: ScamShieldAPI = {
 
   scanContent: (input: { text: string; source?: ContentSource; metadata?: Record<string, unknown>; direction?: 'incoming' | 'outgoing' }) =>
     ipcRenderer.invoke(IPC_CHANNELS.CONTENT_SCAN, input),
+
+  classifyVoice: () =>
+    ipcRenderer.invoke(IPC_CHANNELS.VOICE_CLASSIFY),
 
   getPrivacySummary: () => ipcRenderer.invoke(IPC_CHANNELS.INTEGRATION_PRIVACY_SUMMARY),
   checkAccessibility: () => ipcRenderer.invoke(IPC_CHANNELS.INTEGRATION_ACCESSIBILITY_CHECK),
