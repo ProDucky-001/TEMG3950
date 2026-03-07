@@ -1,7 +1,7 @@
 """
 Inference script for AI vs Human voice detection.
 
-Uses ai-audio-detector (Benford's Law + ensemble ML). Supports WAV, MP3, FLAC, OGG, M4A, AAC.
+Uses SONAR (Wav2Vec2-based AI-audio detection). Supports WAV, MP3, FLAC, OGG, M4A, AAC.
 
 Usage:
     python predict_voice.py --audio path/to/audio.mp3
@@ -20,7 +20,7 @@ from voice_bot import VoiceBot
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Classify audio as human or AI-generated (ai-audio-detector)."
+        description="Classify audio as human or AI-generated (SONAR model)."
     )
     parser.add_argument(
         "audio",
@@ -34,8 +34,10 @@ def main():
         dest="audio_opt",
         help="Path to audio file (alternative to positional)",
     )
-    parser.add_argument("--checkpoint", type=str, default=None, help="Ignored (API compat)")
+    parser.add_argument("--checkpoint", type=str, default=None, help="Path to SONAR checkpoint (.pth)")
     parser.add_argument("--config", type=str, default=None, help="Ignored (API compat)")
+    parser.add_argument("--device", choices=("cuda", "cpu"), default=None,
+                        help="Device: cuda or cpu (default: cuda if available)")
     args = parser.parse_args()
 
     audio_path = args.audio_opt or args.audio
@@ -46,10 +48,12 @@ def main():
         print(f"Error: File not found: {audio_path}", file=sys.stderr)
         sys.exit(1)
 
-    bot = VoiceBot(checkpoint_path=args.checkpoint, config_path=args.config)
+    import torch
+    device = args.device or ("cuda" if torch.cuda.is_available() else "cpu")
+    bot = VoiceBot(checkpoint_path=args.checkpoint, config_path=args.config, device=device)
     if not bot._checkpoint_loaded:
         print(
-            "WARNING: No trained models found. Train with: ai-audio-detector --train --human-dir ... --ai-dir ...",
+            "WARNING: No SONAR checkpoint in ckpt/. Add a fine-tuned .pth for better accuracy (see HOW_TO_RUN.md).",
             file=sys.stderr,
         )
 
