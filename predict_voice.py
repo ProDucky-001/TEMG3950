@@ -1,7 +1,7 @@
 """
 Inference script for AI vs Human voice detection.
 
-Uses SONAR (Wav2Vec2-based AI-audio detection). Supports WAV, MP3, FLAC, OGG, M4A, AAC.
+Uses Gustking/wav2vec2-large-xlsr-deepfake-audio-classification (Hugging Face). Supports WAV, MP3, FLAC, OGG, M4A, AAC.
 
 Usage:
     python predict_voice.py --audio path/to/audio.mp3
@@ -20,7 +20,7 @@ from voice_bot import VoiceBot
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Classify audio as human or AI-generated (SONAR model)."
+        description="Classify audio as human or AI-generated (Gustking Wav2Vec2 model)."
     )
     parser.add_argument(
         "audio",
@@ -36,8 +36,8 @@ def main():
     )
     parser.add_argument("--checkpoint", type=str, default=None, help="Path to SONAR checkpoint (.pth)")
     parser.add_argument("--config", type=str, default=None, help="Ignored (API compat)")
-    parser.add_argument("--device", choices=("cuda", "cpu"), default=None,
-                        help="Device: cuda or cpu (default: cuda if available)")
+    parser.add_argument("--device", choices=("cuda", "cpu"), default="cuda",
+                        help="Device: cuda (default) or cpu")
     args = parser.parse_args()
 
     audio_path = args.audio_opt or args.audio
@@ -49,14 +49,11 @@ def main():
         sys.exit(1)
 
     import torch
-    device = args.device or ("cuda" if torch.cuda.is_available() else "cpu")
+    want_gpu = args.device == "cuda"
+    device = "cuda" if (want_gpu and torch.cuda.is_available()) else "cpu"
+    if want_gpu and not torch.cuda.is_available():
+        print("Note: CUDA not available, using CPU.", file=sys.stderr)
     bot = VoiceBot(checkpoint_path=args.checkpoint, config_path=args.config, device=device)
-    if not bot._checkpoint_loaded:
-        print(
-            "WARNING: No SONAR checkpoint in ckpt/. Add a fine-tuned .pth for better accuracy (see HOW_TO_RUN.md).",
-            file=sys.stderr,
-        )
-
     result = bot.classify(audio_path)
     label_display = "Human" if result["label"] == "human" else "AI-generated"
 

@@ -1,8 +1,6 @@
 # How to run the voice classifier and input a file
 
-> **If you just pulled this repo:** Train the AI model first so predictions are meaningful. See [Getting meaningful scores: fine-tuned checkpoint](#getting-meaningful-scores-fine-tuned-checkpoint) below (download Wavefake, run `scripts/get_sonar_checkpoint.py`, then use `run_classifier.py` with a checkpoint in `ckpt/`).
-
-The app uses the **SONAR** model ([arxiv.org/html/2410.04324v2](https://arxiv.org/html/2410.04324v2)) — a Wav2Vec2-based AI-audio detection framework — to classify audio as human or AI-generated.
+The app uses **[Gustking/wav2vec2-large-xlsr-deepfake-audio-classification](https://huggingface.co/Gustking/wav2vec2-large-xlsr-deepfake-audio-classification)** from Hugging Face — a fine-tuned Wav2Vec2 model for binary classification (real vs. fake/deepfake audio). It was evaluated on ASVspoof2019 (~93% accuracy, ~94% F1, ~4% EER). **No local training or checkpoint is required;** the model is loaded from the Hub on first run.
 
 ## Install
 
@@ -10,41 +8,9 @@ The app uses the **SONAR** model ([arxiv.org/html/2410.04324v2](https://arxiv.or
 pip install -r requirements.txt
 ```
 
-This installs `transformers`, `torch`, `torchaudio`, `soundfile`, and `imageio-ffmpeg`. The first run will download the Wav2Vec2 base model from Hugging Face.
+This installs `transformers`, `torch`, `torchaudio`, `soundfile`, and `imageio-ffmpeg`. The first run will download the model from Hugging Face.
 
 **Optional (for MP3 without torchaudio):** `pip install imageio-ffmpeg` or install ffmpeg and add it to PATH.
-
-## Getting meaningful scores: fine-tuned checkpoint
-
-Without a checkpoint, probabilities stay near 50%. To get real human vs AI scores:
-
-### 1. Download the Wavefake dataset
-
-- Go to **[Zenodo: Wavefake](https://zenodo.org/records/5642694)** and download the dataset (e.g. the zip or tar).
-- Extract it to a folder, e.g. `C:\data\wavefake` (the extracted folder should contain subfolders like `ljspeech_full_band_melgan`, `ljspeech_hifiGAN`, etc.).
-
-### 2. Train and copy a checkpoint (from this project)
-
-From the **project root** (the folder containing `voice_bot.py` and `ckpt/`):
-
-```bash
-python scripts/get_sonar_checkpoint.py --wavefake-dir "C:\data\wavefake"
-```
-
-Replace `C:\data\wavefake` with the path where you extracted Wavefake.
-
-- The script clones the [SONAR repo](https://github.com/Jessegator/SONAR) into `sonar_repo/` if needed, prepares `sonar_repo/data/wavefake/`, runs SONAR training (`main_fm.py --model wave2vec2 --epochs 3`), then copies the resulting `.pth` into **`ckpt/`**.
-- Requires **Python 3.9+**, **Git**, and the same dependencies SONAR needs (e.g. `torch`, `transformers`, `librosa`). Install SONAR’s deps inside `sonar_repo/` if needed (e.g. `pip install torch transformers librosa scikit-learn tqdm` in a venv that you use only for this script).
-
-### 3. Run the classifier again
-
-After a `.pth` file appears in **`ckpt/`**, run:
-
-```bash
-python run_classifier.py "path\to\audio.mp3"
-```
-
-The app will load the checkpoint and report **checkpoint_loaded: true**; probabilities will then reflect the model’s confidence instead of staying near 50%.
 
 ## Option 1: Interactive (type or paste file path)
 
@@ -72,8 +38,34 @@ python predict_voice.py "C:\path\to\your\file.mp3"
 
 ## Supported formats
 
-WAV, MP3, FLAC, OGG, M4A, AAC.
+WAV, MP3, FLAC, OGG, M4A, AAC. Audio is resampled to 16 kHz for the model.
+
+## Device
+
+Use GPU if available (default). To force CPU:
+
+```bash
+python run_classifier.py --device cpu "path\to\audio.mp3"
+```
+
+## Human voice dataset (AudioMNIST data/01)
+
+To download the [AudioMNIST](https://github.com/soerenab/AudioMNIST) human voice WAV files from `data/01` for use as a human-voice dataset (e.g. for finetuning):
+
+1. In a terminal in this folder, run:
+   ```bash
+   python download_audio_mnist.py
+   ```
+   Or on Windows, double-click **`DOWNLOAD_AUDIOMNIST.bat`**.
+2. Files are saved to **`data/audio_mnist_human`** (500 WAVs). To use a different folder:
+   ```bash
+   python download_audio_mnist.py path/to/output_dir
+   ```
+3. Use the folder when training, e.g.:
+   ```bash
+   python train_with_my_data.py --human_dir ./data/audio_mnist_human --ai_dir path/to/ai_audio --output_dir ./my_model
+   ```
 
 ## Note
 
-If you see “(Uncalibrated: no SONAR checkpoint loaded)”, the model is still runnable but probabilities are from an untrained head. Add a fine-tuned checkpoint to **`ckpt/`** for calibrated results.
+The classifier returns scores for **real** (human) and **fake** (AI-generated). Performance may vary on audio that differs from the model’s training data; test on your own samples as needed.

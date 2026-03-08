@@ -1,9 +1,9 @@
 """
 Voice Bot: single integration point to classify any audio as human or AI-generated.
 
-Uses the SONAR model (Wav2Vec2-based AI-audio detection).
-Paper: https://arxiv.org/html/2410.04324v2
-Code: https://github.com/Jessegator/SONAR
+Uses the Gustking Wav2Vec2 deepfake model from Hugging Face by default:
+  Gustking/wav2vec2-large-xlsr-deepfake-audio-classification
+(~93% accuracy on ASVspoof2019, real vs. fake; no local checkpoint needed.)
 
 Example:
     from voice_bot import VoiceBot
@@ -19,37 +19,16 @@ from pathlib import Path
 
 _BASE_DIR = Path(__file__).resolve().parent
 
-# Optional checkpoint from SONAR fine-tuning (main_fm.py on Wavefake)
-# If present, improves accuracy; otherwise uses base Wav2Vec2 + random head (uncalibrated).
-DEFAULT_CHECKPOINT_DIR = _BASE_DIR / "ckpt"
-DEFAULT_CHECKPOINT_GLOB = "wave2vec2_epoch_*.pth"
 
-
-def _find_checkpoint() -> str | None:
-    """Return path to a SONAR checkpoint if any exist."""
-    if not DEFAULT_CHECKPOINT_DIR.is_dir():
-        return None
-    for p in sorted(DEFAULT_CHECKPOINT_DIR.glob(DEFAULT_CHECKPOINT_GLOB), reverse=True):
-        return str(p)
-    return None
-
-
-def _create_detector(checkpoint_path: str | None, device: str | None):
-    from sonar_detector import SonarVoiceDetector
-    return SonarVoiceDetector(checkpoint_path=checkpoint_path, device=device)
-
-
-def _checkpoint_available() -> bool:
-    """True if a SONAR fine-tuned checkpoint exists."""
-    return _find_checkpoint() is not None
+def _create_detector(device: str | None, model_id: str | None = None):
+    from huggingface_detector import HuggingFaceVoiceDetector
+    return HuggingFaceVoiceDetector(device=device, model_id=model_id)
 
 
 class VoiceBot:
     """
-    Bot that classifies audio as human or AI-generated using SONAR (Wav2Vec2-based).
-
-    Supports WAV, MP3, FLAC, OGG, M4A, AAC. For best accuracy, fine-tune SONAR
-    on Wavefake (see SONAR repo) and place the .pth in ckpt/.
+    Bot that classifies audio as human or AI-generated using the Gustking
+    Wav2Vec2 deepfake model (Hugging Face). Supports WAV, MP3, FLAC, OGG, M4A, AAC.
     """
 
     def __init__(
@@ -57,24 +36,24 @@ class VoiceBot:
         checkpoint_path: str | None = None,
         config_path: str | None = None,
         device: str | None = None,
+        model_id: str | None = None,
     ):
         """
         Args:
-            checkpoint_path: Optional path to SONAR checkpoint (.pth from main_fm.py).
+            checkpoint_path: Unused (kept for API compatibility; model is from Hugging Face).
             config_path: Unused (kept for API compatibility).
             device: Device for inference ('cuda' or 'cpu').
+            model_id: Hugging Face model id or path to finetuned model (e.g. ./finetuned_voice_model).
         """
         self._base_dir = _BASE_DIR
-        self._checkpoint_path = checkpoint_path or _find_checkpoint()
-        self._checkpoint_loaded = (
-            self._checkpoint_path is not None and os.path.isfile(self._checkpoint_path)
-        )
+        self._checkpoint_loaded = True  # pre-trained HF model, no local ckpt
         self._detector = None
         self._device = device
+        self._model_id = model_id
 
     def _get_detector(self):
         if self._detector is None:
-            self._detector = _create_detector(self._checkpoint_path, self._device)
+            self._detector = _create_detector(self._device, model_id=self._model_id)
         return self._detector
 
     def classify(
@@ -95,7 +74,7 @@ class VoiceBot:
                 - "label": "human" | "ai"
                 - "prob_human": float in [0, 1] (if return_probs)
                 - "prob_ai": float in [0, 1] (if return_probs)
-                - "checkpoint_loaded": bool (True if SONAR checkpoint was loaded)
+                - "checkpoint_loaded": bool (True; model is pre-trained from Hugging Face)
         """
         audio_path = os.path.abspath(audio_path)
         if not os.path.isfile(audio_path):
@@ -105,12 +84,11 @@ class VoiceBot:
         result = detector.predict_file(audio_path)
         if result is None or "label" not in result:
             raise ValueError(
-                "SONAR detector returned no result. Check audio format and dependencies "
-                "(transformers, torch, audio_utils). For best accuracy, add a fine-tuned "
-                "checkpoint to ckpt/ (train with SONAR repo on Wavefake)."
+                "Classifier returned no result. Check audio format and dependencies "
+                "(transformers, torch, audio_utils)."
             )
         if result.get("label") == "error":
-            raise ValueError(result.get("error", "SONAR classification failed"))
+            raise ValueError(result.get("error", "Classification failed"))
 
         out = {
             "label": result["label"],
@@ -153,7 +131,7 @@ if __name__ == "__main__":
         description="Classify audio as human or AI-generated (SONAR model)."
     )
     parser.add_argument("audio", help="Path to audio file")
-    parser.add_argument("--checkpoint", default=None, help="Path to SONAR checkpoint (.pth)")
+    parser.add_argument("--checkpoint", default=None, help="Ignored (API compat)")
     parser.add_argument("--config", default=None, help="Ignored (API compat)")
     args = parser.parse_args()
 
@@ -162,5 +140,3 @@ if __name__ == "__main__":
     label = "Human" if result["label"] == "human" else "AI-generated"
     print(f"File: {args.audio}")
     print(f"Prediction: {label}  (P(human)={result['prob_human']:.2%}, P(AI)={result['prob_ai']:.2%})")
-    if not result.get("checkpoint_loaded"):
-        print("(Uncalibrated: no SONAR checkpoint loaded. Add a .pth to ckpt/ for better accuracy.)")

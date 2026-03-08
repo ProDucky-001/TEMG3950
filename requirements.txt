@@ -1,6 +1,7 @@
 # Voice classification: SONAR (Wav2Vec2-based AI-audio detection)
 # https://arxiv.org/html/2410.04324v2, https://github.com/Jessegator/SONAR
 transformers>=4.30.0
+datasets>=2.14.0
 
 # Optional: for legacy Wav2Vec2 trainer/example
 --extra-index-url https://download.pytorch.org/whl/cu118
@@ -8,4 +9,5 @@ torch
 torchvision
 torchaudio
 soundfile
+scipy
 imageio-ffmpeg
