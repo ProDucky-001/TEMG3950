@@ -1,3 +1,4 @@
+import 'dotenv/config'
 import { app, ipcMain, dialog } from 'electron'
 import { TrayManager } from './managers/TrayManager'
 import { WindowManager } from './managers/WindowManager'

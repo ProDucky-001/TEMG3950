@@ -17,6 +17,7 @@
     "test:perf": "jest --config jest.config.cjs --testPathPattern=\"tests/performance\" --no-cache"
   },
   "dependencies": {
+    "dotenv": "^16.4.5",
     "electron-store": "8.1.0",
     "electron-updater": "^6.3.9",
     "react": "^18.3.1",
