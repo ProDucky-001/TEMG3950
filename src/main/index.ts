@@ -28,6 +28,12 @@ import { logger } from './services/logger'
 // Disable GPU acceleration for compatibility
 app.disableHardwareAcceleration()
 
+// On Windows, disable WGC capturers to avoid "Failed to start capture: -2147024809" (E_INVALIDARG).
+// Chromium uses AllowWgcWindowCapturer (default on) and AllowWgcScreenCapturer; disable both so legacy capturer is used.
+if (process.platform === 'win32') {
+  app.commandLine.appendSwitch('disable-features', 'AllowWgcWindowCapturer,AllowWgcScreenCapturer')
+}
+
 let trayManager: TrayManager
 let windowManager: WindowManager
 let settingsManager: SettingsManager

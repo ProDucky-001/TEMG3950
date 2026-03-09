@@ -2,7 +2,8 @@ import { BrowserWindow, screen } from 'electron'
 import path from 'path'
 import fs from 'fs'
 
-const isDev = process.env.NODE_ENV === 'development' || !!process.env.ELECTRON_VITE_DEV_SERVER_URL
+const devServerUrl = process.env.ELECTRON_RENDERER_URL || process.env.ELECTRON_VITE_DEV_SERVER_URL
+const isDev = process.env.NODE_ENV === 'development' || !!devServerUrl
 
 /**
  * Transparent overlay window for green-corner UI when an email application is detected.
@@ -73,8 +74,8 @@ export class OverlayWindow {
   loadGreenCorner(): void {
     const win = this.getWindow()
     if (!win) return
-    if (isDev && process.env.ELECTRON_VITE_DEV_SERVER_URL) {
-      win.loadURL(`${process.env.ELECTRON_VITE_DEV_SERVER_URL}/recording-overlay.html`)
+    if (devServerUrl) {
+      win.loadURL(`${devServerUrl}/recording-overlay.html`)
     } else {
       win.loadFile(path.join(__dirname, '../renderer/recording-overlay.html'))
     }

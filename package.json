@@ -6,10 +6,10 @@
   "author": "ScamShield",
   "license": "MIT",
   "scripts": {
-    "dev": "electron-vite dev",
-    "dev:verbose": "ELECTRON_ENABLE_LOGGING=1 electron-vite dev",
+    "dev": "node scripts/dev-filter-wgc.js",
+    "dev:verbose": "ELECTRON_ENABLE_LOGGING=1 electron-vite dev -- --disable-features=AllowWgcWindowCapturer,AllowWgcScreenCapturer",
     "build": "electron-vite build",
-    "start": "electron .",
+    "start": "electron . --disable-features=AllowWgcWindowCapturer,AllowWgcScreenCapturer",
     "clean": "node -e \"require('fs').rmSync('out', { recursive: true, force: true })\"",
     "preview": "electron-vite preview",
     "postinstall": "electron-builder install-app-deps",

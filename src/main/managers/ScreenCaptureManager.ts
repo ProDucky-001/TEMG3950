@@ -23,7 +23,8 @@ import type { ContentContext } from '../../shared/integration-types'
 import { logger } from '../services/logger'
 import { isRealUrl } from '../utils/urlUtils'
 
-const isDev = process.env.NODE_ENV === 'development' || !!process.env.ELECTRON_VITE_DEV_SERVER_URL
+const devServerUrl = process.env.ELECTRON_RENDERER_URL || process.env.ELECTRON_VITE_DEV_SERVER_URL
+const isDev = process.env.NODE_ENV === 'development' || !!devServerUrl
 const DEFAULT_POLL_INTERVAL_MS = 3000
 const DEBUG_LOG_PATH = '/Users/symok/Desktop/UST1-2/Anti Scam/.cursor/debug-2b6709.log'
 /** Show grey overlay on app window within this time when app is determined (ms).
@@ -438,8 +439,8 @@ export class ScreenCaptureManager {
       logger.warn('ScreenCaptureManager: capture preload not found; screen capture will fail until preload is built')
     }
     this.captureWindow.setMenuBarVisibility(false)
-    if (isDev && process.env.ELECTRON_VITE_DEV_SERVER_URL) {
-      this.captureWindow.loadURL(`${process.env.ELECTRON_VITE_DEV_SERVER_URL}/capture.html`)
+    if (devServerUrl) {
+      this.captureWindow.loadURL(`${devServerUrl}/capture.html`)
     } else {
       this.captureWindow.loadFile(path.join(__dirname, '../renderer/capture.html'))
     }
@@ -691,8 +692,8 @@ export class ScreenCaptureManager {
         }
       }
     })
-    if (isDev && process.env.ELECTRON_VITE_DEV_SERVER_URL) {
-      this.overlayWindow.loadURL(`${process.env.ELECTRON_VITE_DEV_SERVER_URL}/recording-overlay.html`)
+    if (devServerUrl) {
+      this.overlayWindow.loadURL(`${devServerUrl}/recording-overlay.html`)
     } else {
       const toLoad = fs.existsSync(path.join(__dirname, '../renderer/recording-overlay.html'))
         ? path.join(__dirname, '../renderer/recording-overlay.html')
