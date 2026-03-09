@@ -40,6 +40,9 @@ export const IPC_CHANNELS = {
   // AI content detection
   CONTENT_SCAN: 'content:scan',
 
+  // Voice classification (human vs AI-generated audio)
+  VOICE_CLASSIFY: 'voice:classify',
+
   // App integration / monitoring
   INTEGRATION_PRIVACY_SUMMARY: 'integration:privacy-summary',
   INTEGRATION_ACCESSIBILITY_CHECK: 'integration:accessibility-check',

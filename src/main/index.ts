@@ -1,3 +1,4 @@
+import 'dotenv/config'
 import { app, ipcMain, systemPreferences, dialog, shell } from 'electron'
 import { TrayManager } from './managers/TrayManager'
 import { WindowManager } from './managers/WindowManager'
@@ -7,6 +8,7 @@ import { SettingsManager } from './managers/SettingsManager'
 import { AlertManager } from './managers/AlertManager'
 import { MonitoringManager } from './managers/MonitoringManager'
 import { ScamDatabase, LinkScanner, ContentScanner } from './services'
+import { classifyAudioFile } from './services/VoiceClassifierService'
 import { SystemEventListeners } from './services/SystemEventListeners'
 import { StartupManager } from './services/StartupManager'
 import { ResourceManager } from './services/ResourceManager'
@@ -298,9 +300,18 @@ function setupIpcHandlers(startupManager: StartupManager, feedbackManager: Feedb
   ipcMain.handle(IPC_CHANNELS.STATS_GET, () => monitoringManager.getStatistics())
 
   // Monitoring
-  ipcMain.handle(IPC_CHANNELS.MONITORING_TOGGLE, () =>
-    monitoringManager.toggle()
-  )
+  ipcMain.handle(IPC_CHANNELS.MONITORING_TOGGLE, async () => {
+    const enabled = monitoringManager.toggle()
+    if (enabled) {
+      monitoringManager.stop()
+      await monitoringManager.start()
+      appMonitorManager.startMonitoring()
+    } else {
+      monitoringManager.stop()
+      appMonitorManager.stopMonitoring()
+    }
+    return enabled
+  })
   ipcMain.handle(IPC_CHANNELS.MONITORING_STATUS, () =>
     monitoringManager.getStatus()
   )
@@ -321,6 +332,20 @@ function setupIpcHandlers(startupManager: StartupManager, feedbackManager: Feedb
       metadata: input.metadata,
       direction: input.direction,
     })
+  })
+
+  ipcMain.handle(IPC_CHANNELS.VOICE_CLASSIFY, async () => {
+    const win = windowManager.getDashboardWindow() ?? undefined
+    const { canceled, filePaths } = await dialog.showOpenDialog(win, {
+      title: 'Select an audio file to classify',
+      filters: [
+        { name: 'Audio', extensions: ['mp3', 'wav', 'flac', 'ogg', 'm4a'] },
+        { name: 'All files', extensions: ['*'] },
+      ],
+      properties: ['openFile'],
+    })
+    if (canceled || filePaths.length === 0) return null
+    return classifyAudioFile(filePaths[0])
   })
 
   ipcMain.handle(IPC_CHANNELS.INTEGRATION_PRIVACY_SUMMARY, () =>

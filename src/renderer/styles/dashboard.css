@@ -120,6 +120,43 @@
   background: var(--text-muted);
 }
 
+.card-voice .btn {
+  margin-top: 8px;
+}
+
+.voice-error {
+  margin: 10px 0 0 0;
+  font-size: 12px;
+  color: var(--danger);
+}
+
+.voice-result {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
+.voice-label {
+  margin: 0 0 4px 0;
+  font-size: 14px;
+}
+
+.voice-label strong {
+  color: var(--text-primary);
+}
+
+.voice-uncalibrated {
+  font-size: 12px;
+  color: var(--text-muted);
+  font-weight: normal;
+}
+
+.voice-probs {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
 .quick-actions {
   display: flex;
   flex-wrap: wrap;

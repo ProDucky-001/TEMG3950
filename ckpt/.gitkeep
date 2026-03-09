@@ -1,0 +1,2 @@
+# Place SONAR fine-tuned checkpoint .pth files here (e.g. wave2vec2_epoch_2_lr_1e-05_bs_16.pth).
+# Run scripts/get_sonar_checkpoint.py to train and copy a checkpoint.

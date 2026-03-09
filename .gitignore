@@ -34,6 +34,11 @@ test-results/
 playwright-report/
 playwright/.cache/
 
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
 # Misc
 *.tsbuildinfo
 node_modules

@@ -11,6 +11,7 @@ import {
 } from 'recharts'
 import type { Alert, Statistics, Settings } from '../../shared/types'
 import type { AlertStats } from '../../shared/alert-types'
+import type { VoiceClassificationResult } from '../../shared/voice-types'
 import { SEVERITY_LABELS } from '../../shared/alert-types'
 import ThreatDetailsPopup from './ThreatDetailsPopup'
 import '../styles/dashboard.css'
@@ -37,6 +38,9 @@ export default function MainDashboard() {
     recommendations: string[]
   } | null>(null)
   const [scanning, setScanning] = useState(false)
+  const [voiceResult, setVoiceResult] = useState<VoiceClassificationResult | null>(null)
+  const [voiceError, setVoiceError] = useState<string | null>(null)
+  const [voiceLoading, setVoiceLoading] = useState(false)
 
   useEffect(() => {
     loadData()
@@ -63,9 +67,12 @@ export default function MainDashboard() {
   }
 
   async function handleToggleMonitoring() {
-    if (window.scamshield) {
+    if (!window.scamshield?.toggleMonitoring) return
+    try {
       const enabled = await window.scamshield.toggleMonitoring()
       setMonitoringEnabled(enabled)
+    } catch {
+      // Ignore
     }
   }
 
@@ -105,6 +112,24 @@ export default function MainDashboard() {
       })
     } finally {
       setScanning(false)
+    }
+  }
+
+  async function handleClassifyVoice() {
+    if (!window.scamshield?.classifyVoice) return
+    setVoiceError(null)
+    setVoiceResult(null)
+    setVoiceLoading(true)
+    try {
+      const result = await window.scamshield.classifyVoice()
+      if (result == null) {
+        return
+      }
+      setVoiceResult(result)
+    } catch (err) {
+      setVoiceError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setVoiceLoading(false)
     }
   }
 
@@ -219,6 +244,40 @@ export default function MainDashboard() {
           <div className="card card-scan">
             <h2 className="card-title">Last scan</h2>
             <p className="card-stat card-scan-time">{lastScanLabel}</p>
+          </div>
+
+          <div className="card card-voice">
+            <h2 className="card-title">Voice check</h2>
+            <p className="card-desc">
+              Check if an audio file (e.g. call recording) is human or AI-generated voice.
+            </p>
+            <button
+              type="button"
+              className="btn btn-secondary"
+              onClick={handleClassifyVoice}
+              disabled={voiceLoading}
+              aria-label="Select audio file to classify"
+            >
+              {voiceLoading ? 'Analyzing…' : 'Check audio file'}
+            </button>
+            {voiceError && (
+              <p className="voice-error" role="alert">
+                {voiceError}
+              </p>
+            )}
+            {voiceResult && (
+              <div className="voice-result" aria-live="polite">
+                <p className="voice-label">
+                  <strong>{voiceResult.label === 'ai' ? 'AI-generated' : 'Human'}</strong>
+                  {!voiceResult.checkpoint_loaded && (
+                    <span className="voice-uncalibrated"> (uncalibrated model)</span>
+                  )}
+                </p>
+                <p className="voice-probs">
+                  P(Human): {(voiceResult.prob_human * 100).toFixed(0)}% · P(AI): {(voiceResult.prob_ai * 100).toFixed(0)}%
+                </p>
+              </div>
+            )}
           </div>
         </section>
 

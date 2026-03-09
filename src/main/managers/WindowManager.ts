@@ -1,9 +1,12 @@
 import { app, BrowserWindow, screen } from 'electron'
+import type { Event } from 'electron'
 import path from 'path'
+import fs from 'fs'
 import type { SettingsManager } from './SettingsManager'
 import type { WindowStateStore } from './WindowStateStore'
 
-const isDev = process.env.NODE_ENV === 'development' || !!process.env.ELECTRON_VITE_DEV_SERVER_URL
+const devServerUrl = process.env.ELECTRON_RENDERER_URL || process.env.ELECTRON_VITE_DEV_SERVER_URL
+const isDev = process.env.NODE_ENV === 'development' || !!devServerUrl
 
 export class WindowManager {
   private dashboardWindow: BrowserWindow | null = null
@@ -41,6 +44,8 @@ export class WindowManager {
     const y = saved?.y ?? Math.floor((workArea.height - height) / 2)
     const alwaysOnTop = this.windowState.getDashboardAlwaysOnTop()
 
+    const preloadPath = path.join(app.getAppPath(), 'out', 'preload', 'index.js')
+    const preloadExists = fs.existsSync(preloadPath)
     this.dashboardWindow = new BrowserWindow({
       x,
       y,
@@ -51,9 +56,10 @@ export class WindowManager {
       title: 'ScamShield Dashboard',
       alwaysOnTop,
       webPreferences: {
-        preload: path.join(__dirname, '../preload/index.js'),
+        preload: preloadExists ? preloadPath : path.join(__dirname, '../preload/index.js'),
         contextIsolation: true,
         nodeIntegration: false,
+        sandbox: false,
       },
       show: false,
     })
@@ -76,6 +82,7 @@ export class WindowManager {
     const x = saved?.x ?? Math.floor((workArea.width - width) / 2)
     const y = saved?.y ?? Math.floor((workArea.height - height) / 2)
 
+    const preloadPath = path.join(app.getAppPath(), 'out', 'preload', 'index.js')
     this.settingsWindow = new BrowserWindow({
       x,
       y,
@@ -85,9 +92,10 @@ export class WindowManager {
       minHeight: 500,
       title: 'ScamShield Settings',
       webPreferences: {
-        preload: path.join(__dirname, '../preload/index.js'),
+        preload: fs.existsSync(preloadPath) ? preloadPath : path.join(__dirname, '../preload/index.js'),
         contextIsolation: true,
         nodeIntegration: false,
+        sandbox: false,
       },
       show: false,
     })
@@ -112,7 +120,7 @@ export class WindowManager {
     win: BrowserWindow,
     type: 'dashboard' | 'settings'
   ): void {
-    win.on('close', (e) => {
+    win.on('close', (e: Event) => {
       if (type !== 'dashboard') return
       if (this.isQuitting) return
       const settings = this.settingsManager.getSettings()
@@ -122,7 +130,8 @@ export class WindowManager {
       }
     })
 
-    win.on('minimize', (e) => {
+    // Electron v33 typings omit 'minimize'; event exists at runtime
+    ;(win as BrowserWindow & { on(event: 'minimize', listener: (e: Event) => void): void }).on('minimize', (e: Event) => {
       if (type !== 'dashboard') return
       if (this.isQuitting) return
       const settings = this.settingsManager.getSettings()
@@ -173,10 +182,11 @@ export class WindowManager {
 
   private loadWindow(win: BrowserWindow, page: string): void {
     const hash = page === 'dashboard' ? '' : `#/${page}`
-    if (isDev && process.env.ELECTRON_VITE_DEV_SERVER_URL) {
-      const url = `${process.env.ELECTRON_VITE_DEV_SERVER_URL}${hash}`
+    if (isDev && devServerUrl) {
+      const url = `${devServerUrl}${hash}`
       win.loadURL(url)
-      win.webContents.openDevTools()
+      // DevTools: open manually via Ctrl+Shift+I. Auto-open triggers Autofill.enable
+      // CDP errors in Electron's Chromium (known upstream bug, harmless but noisy).
     } else {
       const filePath = path.join(__dirname, '../renderer/index.html')
       win.loadURL(`file://${filePath}${hash}`)
