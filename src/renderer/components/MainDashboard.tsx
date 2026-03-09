@@ -29,6 +29,14 @@ export default function MainDashboard() {
   const [alertSort, setAlertSort] = useState<AlertSort>('newest')
   const [selectedAlert, setSelectedAlert] = useState<Alert | null>(null)
   const [popupOpen, setPopupOpen] = useState(false)
+  const [scanUrlInput, setScanUrlInput] = useState('')
+  const [scanResult, setScanResult] = useState<{
+    url: string
+    riskScore: number
+    explanation: string
+    recommendations: string[]
+  } | null>(null)
+  const [scanning, setScanning] = useState(false)
 
   useEffect(() => {
     loadData()
@@ -71,8 +79,33 @@ export default function MainDashboard() {
 
   async function handleRunFullScan() {
     if (!window.scamshield) return
-    // Placeholder: trigger monitoring refresh / scan; in a full impl would call a scan API
     await loadData()
+  }
+
+  async function handleCheckUrl() {
+    const url = scanUrlInput.trim()
+    if (!url || !window.scamshield) return
+    setScanning(true)
+    setScanResult(null)
+    try {
+      const result = await window.scamshield.scanLink(url)
+      setScanResult({
+        url: result.resolvedUrl ?? result.url,
+        riskScore: result.riskScore,
+        explanation: result.explanation,
+        recommendations: result.recommendations ?? [],
+      })
+      await loadData()
+    } catch {
+      setScanResult({
+        url,
+        riskScore: 0,
+        explanation: 'Could not analyze this link.',
+        recommendations: ['Check the URL format and try again.'],
+      })
+    } finally {
+      setScanning(false)
+    }
   }
 
   const filteredAlerts = alerts
@@ -122,11 +155,6 @@ export default function MainDashboard() {
     navigate(`/alerts/${alert.id}`)
   }
 
-  const protectedApps = settings?.monitoredApps ?? []
-  const activeCount = protectedApps.filter(
-    (app) => monitoringEnabled && settings?.monitoringEnabled && app.enabled
-  ).length
-
   return (
     <div className="dashboard" role="main" aria-label="ScamShield Dashboard">
       <header className="dashboard-header">
@@ -156,8 +184,8 @@ export default function MainDashboard() {
             </div>
             <p className="card-desc">
               {monitoringEnabled
-                ? 'Real-time monitoring is protecting your apps.'
-                : 'Enable protection to scan links and content.'}
+                ? 'Clipboard is monitored for links. Paste or copy a suspicious URL to trigger a check.'
+                : 'Enable protection to scan links when you copy them.'}
             </p>
             <button
               type="button"
@@ -188,37 +216,79 @@ export default function MainDashboard() {
             </div>
           </div>
 
-          <div className="card card-apps">
-            <h2 className="card-title">Protected apps</h2>
-            <p className="card-stat">
-              {activeCount} of {protectedApps.length} active
-            </p>
-            <ul className="apps-mini-list" aria-label="Protected apps status">
-              {protectedApps.slice(0, 4).map((app) => {
-                const active =
-                  monitoringEnabled && settings?.monitoringEnabled && app.enabled
-                return (
-                  <li key={app.id} className="apps-mini-item">
-                    <span
-                      className={`dot ${active ? 'dot-active' : 'dot-inactive'}`}
-                      aria-hidden
-                    />
-                    <span>{app.name}</span>
-                  </li>
-                )
-              })}
-              {protectedApps.length > 4 && (
-                <li className="apps-mini-item apps-mini-more">
-                  +{protectedApps.length - 4} more
-                </li>
-              )}
-            </ul>
-          </div>
-
           <div className="card card-scan">
             <h2 className="card-title">Last scan</h2>
             <p className="card-stat card-scan-time">{lastScanLabel}</p>
           </div>
+        </section>
+
+        {/* Check URL */}
+        <section className="check-url-section" aria-label="Check a link">
+          <h2 className="section-title">Check URL</h2>
+          <p className="section-desc">
+            Paste a link to see its threat score. URLs are also checked automatically when you copy them (clipboard monitoring).
+          </p>
+          <div className="check-url-row">
+            <input
+              type="url"
+              className="check-url-input"
+              placeholder="https://example.com/page"
+              value={scanUrlInput}
+              onChange={(e) => setScanUrlInput(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && handleCheckUrl()}
+              aria-label="URL to check"
+            />
+            <button
+              type="button"
+              className="btn btn-primary"
+              onClick={handleCheckUrl}
+              disabled={scanning || !scanUrlInput.trim()}
+              aria-label="Scan link"
+            >
+              {scanning ? 'Scanning…' : 'Scan link'}
+            </button>
+          </div>
+          {scanResult && (
+            <div className="check-url-result card">
+              <div className="check-url-score-row">
+                <span className="check-url-score-label">Threat score</span>
+                <span
+                  className={`check-url-score-value score-${scanResult.riskScore >= 70 ? 'high' : scanResult.riskScore >= 40 ? 'medium' : 'low'}`}
+                >
+                  {scanResult.riskScore}/100
+                </span>
+              </div>
+              <div className="threat-popup-progress-wrap" style={{ marginBottom: 12 }}>
+                <div
+                  className="threat-popup-progress"
+                  style={{
+                    width: `${scanResult.riskScore}%`,
+                    backgroundColor:
+                      scanResult.riskScore >= 70
+                        ? 'var(--danger)'
+                        : scanResult.riskScore >= 40
+                          ? 'var(--warning)'
+                          : 'var(--success)',
+                  }}
+                  role="progressbar"
+                  aria-valuenow={scanResult.riskScore}
+                  aria-valuemin={0}
+                  aria-valuemax={100}
+                />
+              </div>
+              <p className="check-url-explanation">{scanResult.explanation}</p>
+              {scanResult.recommendations.length > 0 && (
+                <ul className="check-url-recommendations">
+                  {scanResult.recommendations.map((r, i) => (
+                    <li key={i}>{r}</li>
+                  ))}
+                </ul>
+              )}
+              <div className="check-url-reliability" role="note">
+                <strong>How this score is determined:</strong> Analysis runs locally using multiple rule-based signals (known phishing domains, suspicious TLDs, URL shorteners, login/password params, scam keywords) and a trusted-domain allowlist to reduce false positives. We require multiple indicators for high risk and cap single-signal scores. No data is sent to external servers. This aims for high reliability—use as one input and verify through official sources when unsure.
+              </div>
+            </div>
+          )}
         </section>
 
         {/* Quick actions */}
@@ -240,6 +310,23 @@ export default function MainDashboard() {
           >
             Run full scan
           </button>
+          {settings && (
+            <label className="quick-action-toggle">
+              <input
+                type="checkbox"
+                checked={settings.showRecordingIndicator !== false}
+                onChange={async (e) => {
+                  if (!window.scamshield) return
+                  const updated = await window.scamshield.updateSettings({
+                    showRecordingIndicator: e.target.checked,
+                  })
+                  setSettings(updated)
+                }}
+                aria-label="Show green corner indicator when recording"
+              />
+              <span>Green corner indicator when recording</span>
+            </label>
+          )}
           <Link to="/settings" className="btn btn-secondary">
             Open settings
           </Link>

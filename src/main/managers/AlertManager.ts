@@ -66,10 +66,6 @@ export class AlertManager {
     this.store.set('alerts', [])
   }
 
-  getHistoryManager(): AlertHistoryManager {
-    return this.historyManager
-  }
-
   getAlertsLast30Days(): Alert[] {
     return this.historyManager.getAlertsLast30Days()
   }

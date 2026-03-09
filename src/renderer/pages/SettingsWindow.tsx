@@ -17,13 +17,17 @@ export default function SettingsWindow() {
   const [settings, setSettings] = useState<Settings | null>(null)
   const [dashboardAlwaysOnTop, setDashboardAlwaysOnTopState] = useState(false)
   const [usageStatsOptIn, setUsageStatsOptInState] = useState(false)
-  const [activeTab, setActiveTab] = useState<SettingsTab>('general')
+  const [screenCaptureStatus, setScreenCaptureStatus] = useState<'granted' | 'denied' | 'unknown'>('unknown')
+  const [screenCaptureInstructions, setScreenCaptureInstructions] = useState<{ platform: string; steps: string } | null>(null)
+  const [activeTab, setActiveTab] = useState<SettingsTab>('monitoring')
 
   useEffect(() => {
     if (window.scamshield) {
       window.scamshield.getSettings().then(setSettings)
       window.scamshield.getDashboardAlwaysOnTop?.().then(setDashboardAlwaysOnTopState)
       window.scamshield.getUsageStatsOptIn?.().then(setUsageStatsOptInState)
+      window.scamshield.getScreenCaptureStatus?.().then((r: { status: 'granted' | 'denied' | 'unknown' }) => setScreenCaptureStatus(r?.status ?? 'unknown'))
+      window.scamshield.getScreenCaptureInstructions?.().then(setScreenCaptureInstructions)
     }
   }, [])
 
@@ -154,6 +158,56 @@ export default function SettingsWindow() {
           className="settings-panel"
         >
           <h2>Monitoring</h2>
+
+          <h2 className="settings-subsection">Screen capture (email clients)</h2>
+          <p className="section-desc">
+            When you view Gmail, Outlook, or Apple Mail, ScamShield can capture and analyze visible content locally with OCR. Screenshots are never stored. A green corner indicator can show when recording is active.
+          </p>
+          <label className="toggle-row">
+            <span>Enable screen capture when viewing email</span>
+            <input
+              type="checkbox"
+              checked={settings.screenCaptureEnabled !== false}
+              onChange={(e) =>
+                updateSetting('screenCaptureEnabled', e.target.checked)
+              }
+            />
+          </label>
+          <label className="toggle-row">
+            <span>Show green corner indicator when recording</span>
+            <input
+              type="checkbox"
+              checked={settings.showRecordingIndicator !== false}
+              onChange={(e) =>
+                updateSetting('showRecordingIndicator', e.target.checked)
+              }
+            />
+          </label>
+          <div className="form-row">
+            <label>Capture interval when email app is active (seconds)</label>
+            <input
+              type="number"
+              min={2}
+              max={30}
+              value={Math.round((settings.screenCapturePollIntervalMs ?? 3000) / 1000)}
+              onChange={(e) => {
+                const sec = Math.max(2, Math.min(30, parseInt(String(e.target.value), 10) || 3))
+                updateSetting('screenCapturePollIntervalMs', sec * 1000)
+              }}
+            />
+          </div>
+          {screenCaptureStatus === 'denied' && screenCaptureInstructions && (
+            <div className="settings-notice" role="alert">
+              <strong>Screen recording permission required</strong>
+              <p>{screenCaptureInstructions.steps}</p>
+              <p className="settings-notice-hint">Until then, only clipboard and browser URL monitoring are used.</p>
+            </div>
+          )}
+          {screenCaptureStatus === 'granted' && (
+            <p className="section-desc settings-success">Screen capture is active when an email client is in focus. Green corners appear when recording.</p>
+          )}
+
+          <h2 className="settings-subsection" style={{ marginTop: '24px' }}>General monitoring</h2>
           <label className="toggle-row">
             <span>Enable monitoring</span>
             <input
@@ -164,7 +218,8 @@ export default function SettingsWindow() {
               }
             />
           </label>
-          <p className="section-desc">
+
+          <p className="section-desc" style={{ marginTop: '8px' }}>
             Select which apps to monitor for scam links and phishing attempts.
           </p>
           <div className="apps-grid">
@@ -195,6 +250,7 @@ export default function SettingsWindow() {
               Higher sensitivity may produce more alerts but could include false positives.
             </p>
           </div>
+
         </section>
 
         {/* Alerts */}

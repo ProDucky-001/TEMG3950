@@ -5,19 +5,19 @@ import {
 } from '../../shared/link-detection-types'
 
 const WEIGHTS = {
-  knownMalicious: 40,
-  suspiciousTld: 15,
-  typosquatting: 20,
-  urlShortener: 5,
-  ipAddress: 15,
-  excessiveSubdomains: 10,
-  encodedChars: 10,
-  loginParams: 25,
-  cryptoWallet: 15,
-  financialKeywords: 20,
-  urgencyPhrases: 15,
-  prizeLottery: 20,
-  brandImpersonation: 25,
+  knownMalicious: 55,
+  suspiciousTld: 35,
+  typosquatting: 40,
+  urlShortener: 20,
+  ipAddress: 30,
+  excessiveSubdomains: 20,
+  encodedChars: 20,
+  loginParams: 40,
+  cryptoWallet: 35,
+  financialKeywords: 35,
+  urgencyPhrases: 25,
+  prizeLottery: 35,
+  brandImpersonation: 45,
 } as const
 
 const KNOWN_SHORTENERS = new Set([
@@ -36,6 +36,42 @@ const KNOWN_SHORTENERS = new Set([
   'shorturl.at',
   'cutt.ly',
   'rebrand.ly',
+])
+
+/** Trusted base domains to reduce false positives. Known-malicious in DB overrides. */
+const ALLOWLIST_BASE_DOMAINS = new Set([
+  'google.com',
+  'google.co.uk',
+  'youtube.com',
+  'github.com',
+  'github.io',
+  'microsoft.com',
+  'apple.com',
+  'amazon.com',
+  'paypal.com',
+  'facebook.com',
+  'netflix.com',
+  'instagram.com',
+  'twitter.com',
+  'x.com',
+  'linkedin.com',
+  'yahoo.com',
+  'outlook.com',
+  'office.com',
+  'live.com',
+  'dropbox.com',
+  'adobe.com',
+  'ebay.com',
+  'wikipedia.org',
+  'cloudflare.com',
+  'stackoverflow.com',
+  'reddit.com',
+  'twitch.tv',
+  'spotify.com',
+  'zoom.us',
+  'slack.com',
+  'notion.so',
+  'figma.com',
 ])
 
 const COMMON_BRANDS = new Set([
@@ -152,6 +188,8 @@ export class LinkAnalyzer {
       const url = new URL(urlString)
       const hostname = url.hostname.toLowerCase()
       const pathAndQuery = (url.pathname + url.search).toLowerCase()
+      const baseDomain = this.getBaseDomain(hostname)
+      const isAllowlisted = ALLOWLIST_BASE_DOMAINS.has(baseDomain)
 
       const known = this.checkKnownMaliciousDomain(hostname)
       if (known) {
@@ -235,6 +273,20 @@ export class LinkAnalyzer {
         breakdown.push(brandResult)
         threatTypes.add(ThreatType.Phishing)
       }
+
+      if (isAllowlisted && !known) {
+        const knownMaliciousItem = breakdown.find((b) => b.category === 'Known malicious domain')
+        if (!knownMaliciousItem && breakdown.length > 0) {
+          for (let i = 0; i < breakdown.length; i++) {
+            const b = breakdown[i]
+            breakdown[i] = {
+              ...b,
+              score: Math.round(b.score * 0.85),
+              maxScore: b.maxScore,
+            }
+          }
+        }
+      }
     } catch {
       breakdown.push({
         category: 'Invalid URL',
@@ -258,6 +310,17 @@ export class LinkAnalyzer {
 
   private checkKnownMaliciousDomain(hostname: string) {
     return this.scamDb.isDomainKnownMalicious(hostname)
+  }
+
+  private getBaseDomain(hostname: string): string {
+    const parts = hostname.toLowerCase().split('.')
+    if (parts.length <= 2) return hostname
+    const tld = parts[parts.length - 1]
+    const second = parts[parts.length - 2]
+    if (tld === 'uk' || tld === 'au' || tld === 'jp') {
+      if (parts.length >= 3) return parts.slice(-3).join('.')
+    }
+    return second + '.' + tld
   }
 
   private checkSuspiciousTld(url: URL): RiskBreakdownItem | null {

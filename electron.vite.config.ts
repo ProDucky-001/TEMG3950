@@ -21,7 +21,9 @@ export default defineConfig({
     build: {
       rollupOptions: {
         input: {
-          index: resolve(__dirname, 'src/preload/index.ts')
+          index: resolve(__dirname, 'src/preload/index.ts'),
+          capture: resolve(__dirname, 'src/preload/capture.ts'),
+          overlay: resolve(__dirname, 'src/preload/overlay.ts')
         },
         output: {
           entryFileNames: '[name].js'
@@ -34,7 +36,9 @@ export default defineConfig({
     build: {
       rollupOptions: {
         input: {
-          index: resolve(__dirname, 'index.html')
+          index: resolve(__dirname, 'index.html'),
+          capture: resolve(__dirname, 'capture.html'),
+          'recording-overlay': resolve(__dirname, 'recording-overlay.html')
         }
       }
     },

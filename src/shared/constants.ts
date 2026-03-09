@@ -30,4 +30,7 @@ export const DEFAULT_SETTINGS: Settings = {
   launchAtStartup: false,
   minimizeToTray: true,
   closeToTray: true,
+  screenCaptureEnabled: true,
+  screenCapturePollIntervalMs: 3000,
+  showRecordingIndicator: true,
 }

@@ -16,7 +16,6 @@ export const IPC_CHANNELS = {
 
   // Statistics
   STATS_GET: 'stats:get',
-  STATS_UPDATE: 'stats:update',
 
   // Monitoring
   MONITORING_TOGGLE: 'monitoring:toggle',
@@ -25,7 +24,6 @@ export const IPC_CHANNELS = {
   // Windows
   WINDOW_OPEN_DASHBOARD: 'window:open-dashboard',
   WINDOW_OPEN_SETTINGS: 'window:open-settings',
-  WINDOW_CLOSE_ALL: 'window:close-all',
   WINDOW_SET_ALWAYS_ON_TOP: 'window:set-always-on-top',
   WINDOW_GET_ALWAYS_ON_TOP: 'window:get-always-on-top',
 
@@ -52,4 +50,18 @@ export const IPC_CHANNELS = {
   FEEDBACK_REPORT_FALSE_POSITIVE: 'feedback:report-false-positive',
   FEEDBACK_GET_OPT_IN: 'feedback:get-opt-in',
   FEEDBACK_SET_OPT_IN: 'feedback:set-opt-in',
+
+  // Screen capture (email client OCR)
+  SCREEN_CAPTURE_STATUS: 'screen-capture:status',
+  SCREEN_CAPTURE_INSTRUCTIONS: 'screen-capture:instructions',
+
+  // Detection (active window + email state)
+  DETECTION_GET_STATE: 'detection:getState',
+  DETECTION_STATE_CHANGED: 'detection:stateChanged',
+  DETECTION_GET_SETTINGS: 'detection:getSettings',
+  DETECTION_UPDATE_SETTINGS: 'detection:updateSettings',
+
+  // Permissions (unified status + open system prefs)
+  PERMISSIONS_GET_ALL: 'permissions:getAll',
+  PERMISSIONS_OPEN_SYSTEM_PREFS: 'permissions:openSystemPrefs',
 } as const

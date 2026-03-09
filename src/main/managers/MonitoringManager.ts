@@ -26,12 +26,10 @@ export class MonitoringManager {
   async start(): Promise<void> {
     const settings = this.settingsManager.getSettings()
     this.enabled = settings.monitoringEnabled
-
-    // Simulate background scanning - in production this would integrate with
-    // clipboard monitoring, URL detection, etc.
-    this.scanInterval = setInterval(() => {
-      this.performScan()
-    }, 30000) // Scan every 30 seconds
+    // No periodic random URL scanning. URLs are analyzed when:
+    // - User pastes a URL and it appears in the clipboard (clipboard monitoring),
+    // - User manually scans a link from the dashboard (Check URL).
+    // Stats are updated via recordScan() when any scan completes.
   }
 
   stop(): void {
@@ -41,43 +39,11 @@ export class MonitoringManager {
     }
   }
 
-  private performScan(): void {
-    if (!this.enabled) return
-
-    const settings = this.settingsManager.getSettings()
-    if (!settings.monitoringEnabled) return
-
-    const demoUrls = [
-      'https://amaz0n-account-verify.tk/login?redirect=paypal',
-      'https://secure-google-signin.xyz/update',
-      'https://bit.ly/3xYz123',
-      'https://192.168.1.1/login',
-      'https://legitimate-site.com/page',
-    ]
-    const urlToScan = demoUrls[Math.floor(Math.random() * demoUrls.length)]
-
-    this.linkScanner.scan(urlToScan).then((result) => {
-      this.linksScanned++
-      this.lastScanTime = Date.now()
-
-      if (result.riskScore >= 50) {
-        this.threatsDetected++
-        const severity =
-          result.riskScore >= 80 ? 'critical' : result.riskScore >= 60 ? 'high' : 'medium'
-        this.alertManager.addAlert(
-          {
-            type: 'phishing',
-            severity,
-            source: 'Link scanner',
-            message: result.explanation,
-            link: result.resolvedUrl ?? result.url,
-          },
-          settings.alertPreferences
-        )
-      }
-    }).catch((err) => {
-      console.error('[ScamShield] Link scan error:', err)
-    })
+  /** Call when a link scan completes (manual or clipboard) to update stats */
+  recordScan(riskScore: number): void {
+    this.linksScanned++
+    this.lastScanTime = Date.now()
+    if (riskScore >= 50) this.threatsDetected++
   }
 
   toggle(): boolean {

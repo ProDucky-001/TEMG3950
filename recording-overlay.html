@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'" />
+  <title>ScamShield – Recording indicator</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { width: 100%; height: 100%; background: transparent; pointer-events: none; overflow: hidden; }
+
+    .corners-container {
+      position: absolute;
+      display: none;
+    }
+
+    .corners-container.visible {
+      display: block;
+    }
+
+    /*
+     * L-shaped corner brackets: 20px wide, 40px tall.
+     * Each corner is made of two arms (horizontal + vertical) forming an L.
+     * Default colour: #808080 (grey). Turns green (#22c55e) for email.
+     */
+    .bracket {
+      position: absolute;
+      pointer-events: none;
+    }
+    .bracket.top-left { top: 0; left: 0; }
+    .bracket.top-right { top: 0; right: 0; }
+    .bracket.bottom-left { bottom: 0; left: 0; }
+    .bracket.bottom-right { bottom: 0; right: 0; }
+
+    .bracket .arm {
+      position: absolute;
+      background: var(--bracket-color, #808080);
+      transition: background 0.15s ease;
+    }
+
+    /* Top-left: horizontal arm goes right, vertical arm goes down */
+    .bracket.top-left .arm-h {
+      top: 0; left: 0;
+      width: 40px; height: 3px;
+    }
+    .bracket.top-left .arm-v {
+      top: 0; left: 0;
+      width: 3px; height: 40px;
+    }
+
+    /* Top-right: horizontal arm goes left, vertical arm goes down */
+    .bracket.top-right .arm-h {
+      top: 0; right: 0;
+      width: 40px; height: 3px;
+    }
+    .bracket.top-right .arm-v {
+      top: 0; right: 0;
+      width: 3px; height: 40px;
+    }
+
+    /* Bottom-left: horizontal arm goes right, vertical arm goes up */
+    .bracket.bottom-left .arm-h {
+      bottom: 0; left: 0;
+      width: 40px; height: 3px;
+    }
+    .bracket.bottom-left .arm-v {
+      bottom: 0; left: 0;
+      width: 3px; height: 40px;
+    }
+
+    /* Bottom-right: horizontal arm goes left, vertical arm goes up */
+    .bracket.bottom-right .arm-h {
+      bottom: 0; right: 0;
+      width: 40px; height: 3px;
+    }
+    .bracket.bottom-right .arm-v {
+      bottom: 0; right: 0;
+      width: 3px; height: 40px;
+    }
+  </style>
+</head>
+<body>
+  <div id="corners" class="corners-container" aria-hidden="true" role="presentation">
+    <div class="bracket top-left"><div class="arm arm-h"></div><div class="arm arm-v"></div></div>
+    <div class="bracket top-right"><div class="arm arm-h"></div><div class="arm arm-v"></div></div>
+    <div class="bracket bottom-left"><div class="arm arm-h"></div><div class="arm arm-v"></div></div>
+    <div class="bracket bottom-right"><div class="arm arm-h"></div><div class="arm arm-v"></div></div>
+  </div>
+  <script>
+    (function () {
+      var overlayAPI = window.overlayAPI;
+      var container = document.getElementById('corners');
+      var currentState = 'processing';
+      var pendingBounds = null;
+      var rafId = null;
+
+      var GREY = '#808080';
+      var GREEN = '#22c55e';
+
+      function getColor() {
+        return currentState === 'monitoring' ? GREEN : GREY;
+      }
+
+      function renderFrame() {
+        rafId = null;
+        if (!container) return;
+        var b = pendingBounds;
+        if (!b || b.width < 200 || b.height < 200) {
+          container.classList.remove('visible');
+          return;
+        }
+        container.classList.add('visible');
+        container.style.left = b.x + 'px';
+        container.style.top = b.y + 'px';
+        container.style.width = b.width + 'px';
+        container.style.height = b.height + 'px';
+        container.style.setProperty('--bracket-color', getColor());
+      }
+
+      function scheduleRender() {
+        if (rafId != null) return;
+        rafId = requestAnimationFrame(renderFrame);
+      }
+
+      function applyState(state) {
+        currentState = state || 'processing';
+        scheduleRender();
+      }
+
+      function applyBounds(bounds) {
+        pendingBounds = bounds;
+        scheduleRender();
+      }
+
+      if (overlayAPI) {
+        if (overlayAPI.onState) {
+          overlayAPI.onState(function (state) { applyState(state); });
+        }
+        if (overlayAPI.onBounds) {
+          overlayAPI.onBounds(function (bounds) { applyBounds(bounds); });
+        }
+        if (overlayAPI.onWindowData) {
+          overlayAPI.onWindowData(function (data) {
+            applyState(data.state);
+            applyBounds(data.bounds);
+          });
+        }
+      }
+    })();
+  </script>
+</body>
+</html>

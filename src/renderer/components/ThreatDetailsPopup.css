@@ -86,14 +86,16 @@
 
 .threat-popup-message,
 .threat-popup-link,
-.threat-popup-recommendation {
+.threat-popup-recommendation,
+.threat-popup-reliability {
   padding: 0 20px 16px;
   font-size: 14px;
 }
 
 .threat-popup-message strong,
 .threat-popup-link strong,
-.threat-popup-recommendation strong {
+.threat-popup-recommendation strong,
+.threat-popup-reliability strong {
   display: block;
   margin-bottom: 4px;
   color: var(--text-secondary);
@@ -104,7 +106,8 @@
 
 .threat-popup-message p,
 .threat-popup-link p,
-.threat-popup-recommendation p {
+.threat-popup-recommendation p,
+.threat-popup-reliability p {
   margin: 0;
   color: var(--text-primary);
 }

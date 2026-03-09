@@ -5,6 +5,7 @@ import { SEVERITY_COLORS, SEVERITY_LABELS } from '../../shared/alert-types'
 import './InAppAlertOverlay.css'
 
 const TOAST_DURATION_MS = 8000
+const CRITICAL_POPUP_NO_AUTO_DISMISS = true // high/critical stay until user dismisses
 
 export default function InAppAlertOverlay() {
   const [alert, setAlert] = useState<Alert | null>(null)
@@ -22,6 +23,8 @@ export default function InAppAlertOverlay() {
 
   useEffect(() => {
     if (!visible || !alert) return
+    const isCriticalOrHigh = alert.severity === 'critical' || alert.severity === 'high'
+    if (isCriticalOrHigh && CRITICAL_POPUP_NO_AUTO_DISMISS) return // no auto-dismiss
     const t = setTimeout(() => setVisible(false), TOAST_DURATION_MS)
     return () => clearTimeout(t)
   }, [visible, alert])
@@ -50,15 +53,25 @@ export default function InAppAlertOverlay() {
 
   return (
     <div
-      className={`in-app-alert-overlay ${visible ? 'in-app-alert-overlay--visible' : ''}`}
-      role="alert"
-      aria-live="polite"
+      className={`in-app-alert-overlay in-app-alert-overlay--modal ${visible ? 'in-app-alert-overlay--visible' : ''}`}
+      role="alertdialog"
+      aria-modal="true"
+      aria-live="assertive"
+      aria-labelledby="in-app-alert-title"
     >
+      <div
+        className="in-app-alert-overlay__backdrop"
+        onClick={handleIgnore}
+        aria-hidden
+      />
       <div
         className="in-app-alert-overlay__panel"
         style={{ borderLeftColor: color }}
       >
         <div className="in-app-alert-overlay__header">
+          <h2 id="in-app-alert-title" className="in-app-alert-overlay__title">
+            Suspicious content detected
+          </h2>
           <span
             className="in-app-alert-overlay__severity"
             style={{ color }}
@@ -75,6 +88,11 @@ export default function InAppAlertOverlay() {
           </button>
         </div>
         <p className="in-app-alert-overlay__message">{alert.message}</p>
+        {alert.riskScore != null && (
+          <p className="in-app-alert-overlay__score">
+            Threat score: <strong>{alert.riskScore}/100</strong>
+          </p>
+        )}
         {alert.link && (
           <p className="in-app-alert-overlay__link" title={alert.link}>
             {alert.link.slice(0, 50)}…

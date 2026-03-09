@@ -18,12 +18,12 @@ export const SEVERITY_LABELS: Record<AlertSeverity, string> = {
   low: 'Low',
 }
 
-/** Delivery behavior by severity */
+/** Delivery behavior by severity: all immediate so user always sees a popup */
 export const SEVERITY_DELIVERY: Record<AlertSeverity, 'immediate' | 'batch'> = {
   critical: 'immediate',
   high: 'immediate',
-  medium: 'batch',
-  low: 'batch',
+  medium: 'immediate',
+  low: 'immediate',
 }
 
 export type AlertChannel = 'native' | 'in_app' | 'tray' | 'sound'

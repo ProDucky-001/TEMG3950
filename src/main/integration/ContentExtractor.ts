@@ -55,6 +55,33 @@ export class ContentExtractor {
     return [...new Set(matches.map((u) => u.replace(/[.,;:!?)]+$/, '')))]
   }
 
+  /**
+   * Get the first URL suitable for the debug log: prefers full http(s) URLs, then domain-like strings from OCR (e.g. mail.google.com) normalized to https.
+   * Considers both "white" and "grey" URL bar text by scanning a larger region and preferring email-domain URLs when multiple candidates exist.
+   */
+  getFirstLinkForLog(text: string, preferFirstChars = 800): string | null {
+    const region = text.slice(0, preferFirstChars)
+    const withScheme = this.extractUrls(region)
+    const firstFull = withScheme.find((u) => /^https?:\/\/[^\s]+/.test(u) && u.length < 2000)
+    if (firstFull) return firstFull.trim()
+    const fullTextUrls = this.extractUrls(text)
+    const fromFull = fullTextUrls.find((u) => /^https?:\/\/[^\s]+/.test(u) && u.length < 2000)
+    if (fromFull) return fromFull.trim()
+    const DOMAIN_LIKE = /(?:https?:\/\/)?([a-zA-Z0-9][-a-zA-Z0-9.]*\.[a-zA-Z]{2,}(?:\/[^\s<>"{}|\\^`[\]]*)?)/g
+    const domainMatches = region.match(DOMAIN_LIKE) ?? []
+    const emailDomainHint = /(mail\.|outlook|cloud\.microsoft|office\.com)/i
+    const candidates = domainMatches.map((raw) => {
+      let s = raw.replace(/[.,;:!?)]+$/, '').trim()
+      s = s.split(/\s/)[0].slice(0, 500)
+      if (!/^https?:\/\//i.test(s)) s = 'https://' + s
+      return s
+    }).filter((s) => s.length >= 10 && s.length < 2000)
+    const emailLike = candidates.find((c) => emailDomainHint.test(c))
+    if (emailLike) return emailLike
+    if (candidates[0]) return candidates[0]
+    return null
+  }
+
   getSupportedFormats(): ('plain' | 'html' | 'markdown')[] {
     return ['plain', 'html', 'markdown']
   }

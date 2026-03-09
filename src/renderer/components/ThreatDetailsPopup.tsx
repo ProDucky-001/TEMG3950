@@ -39,7 +39,10 @@ export default function ThreatDetailsPopup({
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [onClose])
 
-  const riskScore = SEVERITY_RISK_SCORE[alert.severity]
+  const riskScore =
+    alert.riskScore !== undefined && alert.riskScore !== null
+      ? alert.riskScore
+      : SEVERITY_RISK_SCORE[alert.severity]
   const color = SEVERITY_COLORS[alert.severity] ?? 'var(--text-secondary)'
   const label = SEVERITY_LABELS[alert.severity]
 
@@ -112,6 +115,13 @@ export default function ThreatDetailsPopup({
         <div className="threat-popup-recommendation">
           <strong>Recommendation</strong>
           <p>{RECOMMENDATIONS[alert.severity]}</p>
+        </div>
+
+        <div className="threat-popup-reliability" role="note">
+          <strong>About this score</strong>
+          <p>
+            Threat scores are computed locally using rule-based checks: known phishing domains, suspicious TLDs, URL shorteners, and scam-related keywords. No data is sent to external servers. Use this as one input—not a guarantee—and verify through official channels when unsure.
+          </p>
         </div>
 
         <div className="threat-popup-actions">

@@ -1,33 +1,79 @@
 .in-app-alert-overlay {
   position: fixed;
-  top: 16px;
-  right: 16px;
+  inset: 0;
   z-index: 9999;
-  pointer-events: none;
   display: flex;
-  justify-content: flex-end;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  pointer-events: none;
 }
 
-.in-app-alert-overlay__panel {
+.in-app-alert-overlay--modal .in-app-alert-overlay__backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
   pointer-events: auto;
-  width: 360px;
-  max-width: calc(100vw - 32px);
-  padding: 14px 16px;
-  background: var(--bg-secondary);
-  border: 1px solid var(--border);
-  border-left: 4px solid;
-  border-radius: var(--radius);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
-  animation: in-app-alert-slide 0.25s ease-out;
 }
 
-.in-app-alert-overlay--visible .in-app-alert-overlay__panel {
-  animation: in-app-alert-slide 0.25s ease-out;
+.in-app-alert-overlay--modal.in-app-alert-overlay--visible .in-app-alert-overlay__backdrop {
+  animation: in-app-alert-fade 0.2s ease-out;
+}
+
+.in-app-alert-overlay--modal .in-app-alert-overlay__panel {
+  position: relative;
+  pointer-events: auto;
+  width: 420px;
+  max-width: 100%;
+}
+
+.in-app-alert-overlay:not(.in-app-alert-overlay--visible) {
+  pointer-events: none;
 }
 
 .in-app-alert-overlay:not(.in-app-alert-overlay--visible) .in-app-alert-overlay__panel {
   opacity: 0;
-  transform: translateX(100%);
+  transform: scale(0.95);
+  pointer-events: none;
+  transition: opacity 0.2s, transform 0.2s;
+}
+
+.in-app-alert-overlay--visible .in-app-alert-overlay__panel {
+  animation: in-app-alert-pop 0.25s ease-out;
+}
+
+@keyframes in-app-alert-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes in-app-alert-pop {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.in-app-alert-overlay__panel {
+  padding: 20px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-left: 4px solid;
+  border-radius: var(--radius-lg);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.4);
+}
+
+.in-app-alert-overlay--visible .in-app-alert-overlay__panel {
+  animation: in-app-alert-pop 0.25s ease-out;
+}
+
+.in-app-alert-overlay:not(.in-app-alert-overlay--visible) .in-app-alert-overlay__panel {
+  opacity: 0;
+  transform: scale(0.95);
   pointer-events: none;
   transition: opacity 0.2s, transform 0.2s;
 }
@@ -45,9 +91,18 @@
 
 .in-app-alert-overlay__header {
   display: flex;
+  flex-wrap: wrap;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 8px;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.in-app-alert-overlay__title {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+  flex: 1 1 100%;
 }
 
 .in-app-alert-overlay__severity {
@@ -60,14 +115,17 @@
   background: none;
   border: none;
   color: var(--text-secondary);
-  font-size: 20px;
+  font-size: 24px;
   line-height: 1;
   cursor: pointer;
   padding: 0 4px;
+  margin-left: auto;
 }
 
 .in-app-alert-overlay__close:hover {
   color: var(--text-primary);
+  background: var(--bg-tertiary);
+  border-radius: var(--radius);
 }
 
 .in-app-alert-overlay__message {
@@ -76,8 +134,18 @@
   line-height: 1.4;
 }
 
+.in-app-alert-overlay__score {
+  margin: 0 0 8px 0;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.in-app-alert-overlay__score strong {
+  color: var(--text-primary);
+}
+
 .in-app-alert-overlay__link {
-  margin: 0 0 12px 0;
+  margin: 0 0 16px 0;
   font-size: 12px;
   color: var(--text-secondary);
   overflow: hidden;
@@ -87,13 +155,14 @@
 
 .in-app-alert-overlay__actions {
   display: flex;
-  gap: 8px;
+  gap: 10px;
   flex-wrap: wrap;
+  margin-top: 16px;
 }
 
 .in-app-alert-overlay__btn {
-  padding: 6px 12px;
-  font-size: 12px;
+  padding: 8px 16px;
+  font-size: 13px;
   border-radius: 6px;
   cursor: pointer;
   border: 1px solid var(--border);
@@ -104,6 +173,7 @@
 .in-app-alert-overlay__btn--primary {
   background: var(--accent);
   border-color: var(--accent);
+  color: white;
 }
 
 .in-app-alert-overlay__btn:hover {

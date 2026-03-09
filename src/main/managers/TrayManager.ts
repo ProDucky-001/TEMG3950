@@ -4,22 +4,27 @@ import type { WindowManager } from './WindowManager'
 import type { SettingsManager } from './SettingsManager'
 import type { MonitoringManager } from './MonitoringManager'
 import type { ThreatStatus } from '../../shared/types'
+import type { PermissionManager } from '../services/PermissionManager'
 
 export class TrayManager {
   private tray: Tray | null = null
+  private statusInterval: ReturnType<typeof setInterval> | null = null
   private windowManager: WindowManager
   private settingsManager: SettingsManager
   private monitoringManager: MonitoringManager
+  private permissionManager: PermissionManager | null
   private currentStatus: ThreatStatus = 'safe'
 
   constructor(
     windowManager: WindowManager,
     settingsManager: SettingsManager,
-    monitoringManager: MonitoringManager
+    monitoringManager: MonitoringManager,
+    permissionManager?: PermissionManager | null
   ) {
     this.windowManager = windowManager
     this.settingsManager = settingsManager
     this.monitoringManager = monitoringManager
+    this.permissionManager = permissionManager ?? null
   }
 
   create(): void {
@@ -35,8 +40,7 @@ export class TrayManager {
     this.updateContextMenu()
     this.tray.on('double-click', () => this.windowManager.openDashboard())
 
-    // Update status periodically
-    setInterval(() => this.updateStatus(), 5000)
+    this.statusInterval = setInterval(() => this.updateStatus(), 5000)
   }
 
   private getTrayIconPath(status: ThreatStatus): string {
@@ -79,10 +83,9 @@ export class TrayManager {
   }
 
   private updateContextMenu(): void {
-    const settings = this.settingsManager.getSettings()
     const monitoringStatus = this.monitoringManager.getStatus()
 
-    const contextMenu = Menu.buildFromTemplate([
+    const items: Electron.MenuItemConstructorOptions[] = [
       {
         label: 'Open Dashboard',
         click: () => this.windowManager.openDashboard(),
@@ -95,16 +98,46 @@ export class TrayManager {
         },
       },
       { type: 'separator' },
-      {
-        label: 'Settings',
-        click: () => this.windowManager.openSettings(),
-      },
+    ]
+
+    if (this.permissionManager) {
+      const status = this.permissionManager.getAllStatus()
+      if (status.screen.canRequest) {
+        items.push({
+          label: status.screen.granted ? '✓ Screen Recording' : '⚠ Screen Recording — Not granted',
+          click: status.screen.granted ? undefined : () => this.permissionManager?.showScreenRecordingDialog(),
+        })
+        if (!status.screen.granted) {
+          items.push({
+            label: 'Open System Settings (Screen Recording)',
+            click: () => this.permissionManager?.openSystemPreferences('screen'),
+          })
+        }
+      }
+      if (status.accessibility.canRequest) {
+        items.push({
+          label: status.accessibility.granted ? '✓ Accessibility' : '⚠ Accessibility — Not granted',
+          click: status.accessibility.granted ? undefined : () => this.permissionManager?.showAccessibilityDialog(),
+        })
+        if (!status.accessibility.granted) {
+          items.push({
+            label: 'Open System Settings (Accessibility)',
+            click: () => this.permissionManager?.openSystemPreferences('accessibility'),
+          })
+        }
+      }
+      if (status.screen.canRequest || status.accessibility.canRequest) {
+        items.push({ type: 'separator' })
+      }
+    }
+
+    items.push(
+      { label: 'Settings', click: () => this.windowManager.openSettings() },
       { type: 'separator' },
-      {
-        label: 'Quit ScamShield',
-        click: () => app.quit(),
-      },
-    ])
+      { label: 'Quit ScamShield', click: () => app.quit() }
+    )
+
+    const contextMenu = Menu.buildFromTemplate(items)
 
     this.tray?.setContextMenu(contextMenu)
 
@@ -118,6 +151,10 @@ export class TrayManager {
   }
 
   destroy(): void {
+    if (this.statusInterval) {
+      clearInterval(this.statusInterval)
+      this.statusInterval = null
+    }
     this.tray?.destroy()
     this.tray = null
   }

@@ -27,7 +27,7 @@ export function getAppIdFromProcessName(name: string): SupportedAppId | null {
 }
 
 export function getContentSourceType(appId: SupportedAppId): 'email' | 'messaging' | 'browser' | 'clipboard' {
-  if (appId === 'gmail' || appId === 'outlook') return 'email'
+  if (appId === 'gmail' || appId === 'outlook' || appId === 'generic') return 'email'
   if (['whatsapp', 'telegram', 'discord', 'messages', 'slack'].includes(appId)) return 'messaging'
   if (['safari', 'chrome', 'firefox'].includes(appId)) return 'browser'
   return 'clipboard'

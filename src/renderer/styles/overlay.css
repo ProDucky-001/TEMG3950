@@ -1,0 +1,77 @@
+/*
+ * L-shaped corner bracket overlay.
+ * Grey (#808080) = app determined, Green (#22c55e) = email tab detected.
+ * Each bracket: 20px wide arms, 40px tall arms, 3px thick.
+ */
+
+.scamshield-corner-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.scamshield-corner-overlay .corners {
+  position: absolute;
+  --bracket-color: #808080;
+  display: none;
+}
+
+.scamshield-corner-overlay .corners.has-bounds {
+  display: block;
+}
+
+.scamshield-corner-overlay[data-state="monitoring"] .corners {
+  --bracket-color: #22c55e;
+}
+
+.scamshield-corner-overlay[data-state="processing"] .corners {
+  --bracket-color: #808080;
+}
+
+.scamshield-corner-overlay .bracket {
+  position: absolute;
+  pointer-events: none;
+}
+
+.scamshield-corner-overlay .bracket .arm {
+  position: absolute;
+  background: var(--bracket-color);
+  transition: background 0.15s ease;
+}
+
+/* Arms: 40px long, 3px thick */
+.scamshield-corner-overlay .bracket .arm-h { width: 40px; height: 3px; }
+.scamshield-corner-overlay .bracket .arm-v { width: 3px; height: 40px; }
+
+/* Top-left */
+.scamshield-corner-overlay .bracket.top-left { top: 0; left: 0; }
+.scamshield-corner-overlay .bracket.top-left .arm-h { top: 0; left: 0; }
+.scamshield-corner-overlay .bracket.top-left .arm-v { top: 0; left: 0; }
+
+/* Top-right */
+.scamshield-corner-overlay .bracket.top-right { top: 0; right: 0; }
+.scamshield-corner-overlay .bracket.top-right .arm-h { top: 0; right: 0; }
+.scamshield-corner-overlay .bracket.top-right .arm-v { top: 0; right: 0; }
+
+/* Bottom-left */
+.scamshield-corner-overlay .bracket.bottom-left { bottom: 0; left: 0; }
+.scamshield-corner-overlay .bracket.bottom-left .arm-h { bottom: 0; left: 0; }
+.scamshield-corner-overlay .bracket.bottom-left .arm-v { bottom: 0; left: 0; }
+
+/* Bottom-right */
+.scamshield-corner-overlay .bracket.bottom-right { bottom: 0; right: 0; }
+.scamshield-corner-overlay .bracket.bottom-right .arm-h { bottom: 0; right: 0; }
+.scamshield-corner-overlay .bracket.bottom-right .arm-v { bottom: 0; right: 0; }
+
+@keyframes scamshield-overlay-fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.scamshield-corner-overlay.overlay-visible .bracket .arm {
+  animation: scamshield-overlay-fadeIn 0.15s ease-out forwards;
+}

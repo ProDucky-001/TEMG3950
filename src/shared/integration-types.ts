@@ -79,3 +79,9 @@ export interface PrivacySummary {
   optedOutApps: string[]
   monitoringActive: boolean
 }
+
+/** Permission status for tray/settings UI (screen recording, accessibility). */
+export interface PermissionStatus {
+  screen: { granted: boolean; canRequest: boolean; message?: string }
+  accessibility: { granted: boolean; canRequest: boolean; message?: string }
+}

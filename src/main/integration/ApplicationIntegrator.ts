@@ -44,16 +44,23 @@ export class ApplicationIntegrator {
       reasons.push(...browserReasons)
     }
 
-    for (const url of content.urls) {
-      try {
-        const result = await this.linkScanner.scan(url)
-        linkResults.push({ url: result.url, riskScore: result.riskScore })
-        if (result.riskScore > maxRisk) maxRisk = result.riskScore
-        if (result.riskScore >= 50) {
-          reasons.push(`Suspicious link: ${result.explanation}`)
+    const scanResults = await Promise.all(
+      content.urls.map(async (url) => {
+        try {
+          const result = await this.linkScanner.scan(url)
+          return { url: result.url, riskScore: result.riskScore, explanation: result.explanation }
+        } catch (err) {
+          logger.debug('ApplicationIntegrator: link scan failed', url, err)
+          return null
         }
-      } catch (err) {
-        logger.debug('ApplicationIntegrator: link scan failed', url, err)
+      })
+    )
+    for (const r of scanResults) {
+      if (!r) continue
+      linkResults.push({ url: r.url, riskScore: r.riskScore })
+      if (r.riskScore > maxRisk) maxRisk = r.riskScore
+      if (r.riskScore >= 50) {
+        reasons.push(`Suspicious link: ${r.explanation}`)
       }
     }
 

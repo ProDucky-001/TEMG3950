@@ -10,17 +10,28 @@ export class WindowManager {
   private settingsWindow: BrowserWindow | null = null
   private settingsManager: SettingsManager
   private windowState: WindowStateStore
+  private isQuitting = false
+  private nextDashboardShowInactive = false
 
   constructor(settingsManager: SettingsManager, windowState: WindowStateStore) {
     this.settingsManager = settingsManager
     this.windowState = windowState
   }
 
-  openDashboard(): void {
+  /** Call before app.quit() so window close handlers allow actual close instead of hiding to tray. */
+  setQuitting(quitting: boolean): void {
+    this.isQuitting = quitting
+  }
+
+  /** Open dashboard. Pass { focus: false } to show without stealing focus (e.g. when pushing an alert). */
+  openDashboard(options?: { focus?: boolean }): void {
+    const shouldFocus = options?.focus !== false
     if (this.dashboardWindow && !this.dashboardWindow.isDestroyed()) {
-      this.dashboardWindow.focus()
+      if (shouldFocus) this.dashboardWindow.focus()
       return
     }
+
+    this.nextDashboardShowInactive = !shouldFocus
 
     const workArea = screen.getPrimaryDisplay().workAreaSize
     const saved = this.windowState.getDashboardBounds()
@@ -103,6 +114,7 @@ export class WindowManager {
   ): void {
     win.on('close', (e) => {
       if (type !== 'dashboard') return
+      if (this.isQuitting) return
       const settings = this.settingsManager.getSettings()
       if (settings.closeToTray) {
         e.preventDefault()
@@ -112,6 +124,7 @@ export class WindowManager {
 
     win.on('minimize', (e) => {
       if (type !== 'dashboard') return
+      if (this.isQuitting) return
       const settings = this.settingsManager.getSettings()
       if (settings.minimizeToTray) {
         e.preventDefault()
@@ -127,7 +140,22 @@ export class WindowManager {
       }
     })
 
-    win.once('ready-to-show', () => win.show())
+    if (type === 'dashboard') {
+      win.once('ready-to-show', () => {
+        if (this.nextDashboardShowInactive) {
+          this.nextDashboardShowInactive = false
+          if (typeof win.showInactive === 'function') {
+            win.showInactive()
+          } else {
+            win.show()
+          }
+        } else {
+          win.show()
+        }
+      })
+    } else {
+      win.once('ready-to-show', () => win.show())
+    }
   }
 
   private saveBoundsWhenResize(win: BrowserWindow, type: 'dashboard' | 'settings'): void {

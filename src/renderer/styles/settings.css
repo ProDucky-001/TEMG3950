@@ -35,6 +35,8 @@
 
 .settings-content {
   max-width: 560px;
+  overflow-y: auto;
+  max-height: calc(100vh - 160px);
 }
 
 .settings-tabs {
@@ -76,6 +78,12 @@
 
 .settings-panel h2 {
   margin: 0 0 16px 0;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.settings-subsection {
+  margin: 24px 0 12px 0;
   font-size: 16px;
   font-weight: 600;
 }
@@ -216,4 +224,43 @@
   border: 1px solid var(--border);
   border-radius: var(--radius);
   color: var(--text-primary);
+}
+
+.settings-notice {
+  margin-top: 12px;
+  padding: 12px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-size: 14px;
+}
+
+.settings-notice strong {
+  display: block;
+  margin-bottom: 6px;
+}
+
+.settings-notice p {
+  margin: 0 0 8px 0;
+}
+
+.settings-notice-hint {
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.settings-success {
+  color: var(--success, #22c55e);
+  font-size: 13px;
+  margin-top: 8px;
+}
+
+.form-row input[type="number"] {
+  width: 80px;
+  padding: 8px 10px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text-primary);
+  font-size: 14px;
 }

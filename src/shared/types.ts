@@ -18,6 +18,8 @@ export interface Alert {
   message: string
   link?: string
   appId?: string
+  /** Actual risk score (0-100) from link scan when available */
+  riskScore?: number
 }
 
 export interface Settings {
@@ -28,6 +30,12 @@ export interface Settings {
   launchAtStartup: boolean
   minimizeToTray: boolean
   closeToTray: boolean
+  /** Enable screen capture + OCR when viewing email clients. Default true. */
+  screenCaptureEnabled?: boolean
+  /** Polling interval in ms when email client is active. Default 3000. */
+  screenCapturePollIntervalMs?: number
+  /** Show green corner indicator when screen capture is active. Default true. */
+  showRecordingIndicator?: boolean
 }
 
 export interface AlertPreferences {

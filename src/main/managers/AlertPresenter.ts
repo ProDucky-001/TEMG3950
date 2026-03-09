@@ -4,7 +4,7 @@ import type { AlertSeverity } from '../../shared/alert-types'
 import { SEVERITY_LABELS, SEVERITY_DELIVERY } from '../../shared/alert-types'
 import { logger } from '../services/logger'
 
-const GROUP_WINDOW_MS = 5 * 60 * 1000 // 5 minutes
+const GROUP_WINDOW_MS = 1 * 60 * 1000 // 1 minute (was 5) so popups show more often
 const BATCH_DELAY_MS = 15 * 1000     // 15 seconds for low/medium batch
 
 export interface AlertPresenterOptions {

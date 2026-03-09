@@ -53,6 +53,20 @@ export interface ScamShieldAPI {
   reportFalsePositive: (alertId: string, kind: 'false_positive' | 'help_improve' | 'other', comment?: string) => Promise<void>
   getUsageStatsOptIn: () => Promise<boolean>
   setUsageStatsOptIn: (enabled: boolean) => Promise<void>
+
+  // Screen capture
+  getScreenCaptureStatus: () => Promise<{ status: 'granted' | 'denied' | 'unknown' }>
+  getScreenCaptureInstructions: () => Promise<{ platform: string; steps: string }>
+
+  // Permissions (unified)
+  getPermissionsStatus: () => Promise<import('../shared/integration-types').PermissionStatus>
+  openSystemPreferences: (section: 'screen' | 'accessibility') => Promise<boolean>
+
+  // Detection (active window + email state)
+  getDetectionState: () => Promise<import('../shared/detection-types').DetectionState>
+  onDetectionStateChange: (callback: (state: import('../shared/detection-types').DetectionState) => void) => () => void
+  getDetectionSettings: () => Promise<import('../shared/detection-types').DetectionSettings>
+  updateDetectionSettings: (settings: import('../shared/detection-types').DetectionSettings) => Promise<void>
 }
 
 const api: ScamShieldAPI = {
@@ -105,6 +119,23 @@ const api: ScamShieldAPI = {
   getUsageStatsOptIn: () => ipcRenderer.invoke(IPC_CHANNELS.FEEDBACK_GET_OPT_IN),
   setUsageStatsOptIn: (enabled: boolean) =>
     ipcRenderer.invoke(IPC_CHANNELS.FEEDBACK_SET_OPT_IN, enabled),
+
+  getScreenCaptureStatus: () => ipcRenderer.invoke(IPC_CHANNELS.SCREEN_CAPTURE_STATUS),
+  getScreenCaptureInstructions: () => ipcRenderer.invoke(IPC_CHANNELS.SCREEN_CAPTURE_INSTRUCTIONS),
+
+  getPermissionsStatus: () => ipcRenderer.invoke(IPC_CHANNELS.PERMISSIONS_GET_ALL),
+  openSystemPreferences: (section: 'screen' | 'accessibility') =>
+    ipcRenderer.invoke(IPC_CHANNELS.PERMISSIONS_OPEN_SYSTEM_PREFS, section),
+
+  getDetectionState: () => ipcRenderer.invoke(IPC_CHANNELS.DETECTION_GET_STATE),
+  onDetectionStateChange: (callback: (state: import('../shared/detection-types').DetectionState) => void) => {
+    const handler = (_e: Electron.IpcRendererEvent, state: import('../shared/detection-types').DetectionState) => callback(state)
+    ipcRenderer.on(IPC_CHANNELS.DETECTION_STATE_CHANGED, handler)
+    return () => ipcRenderer.removeListener(IPC_CHANNELS.DETECTION_STATE_CHANGED, handler)
+  },
+  getDetectionSettings: () => ipcRenderer.invoke(IPC_CHANNELS.DETECTION_GET_SETTINGS),
+  updateDetectionSettings: (settings: import('../shared/detection-types').DetectionSettings) =>
+    ipcRenderer.invoke(IPC_CHANNELS.DETECTION_UPDATE_SETTINGS, settings),
 }
 
 contextBridge.exposeInMainWorld('scamshield', api)

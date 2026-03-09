@@ -13,6 +13,7 @@ import { logger } from '../services/logger'
 
 const CLIPBOARD_POLL_INTERVAL_MS = 2000
 const ACTIVE_APP_POLL_INTERVAL_MS = 3000
+const BROWSER_URL_POLL_INTERVAL_MS = 5000
 const MIN_CLIPBOARD_LENGTH_FOR_ANALYSIS = 10
 
 export interface AppMonitorManagerOptions {
@@ -20,6 +21,8 @@ export interface AppMonitorManagerOptions {
   alertManager: AlertManager
   linkScanner: LinkScanner
   contentScanner: ContentScanner
+  /** Called when a link scan completes (e.g. from clipboard) to update stats */
+  onLinkScanned?: (riskScore: number) => void
 }
 
 /**
@@ -33,11 +36,15 @@ export class AppMonitorManager {
   private readonly integrator: ApplicationIntegrator
   private readonly settingsManager: SettingsManager
   private readonly alertManager: AlertManager
+  private readonly onLinkScanned?: (riskScore: number) => void
+  private readonly linkScanner: LinkScanner
 
   private clipboardPollTimer: ReturnType<typeof setInterval> | null = null
   private activeAppPollTimer: ReturnType<typeof setInterval> | null = null
+  private browserUrlPollTimer: ReturnType<typeof setInterval> | null = null
   private lastClipboardText = ''
   private lastClipboardHtml = ''
+  private lastBrowserUrl: string | null = null
   private lastActiveAppId: SupportedAppId | null = null
   private powerUnsubscribe: (() => void) | null = null
   private suspended = false
@@ -45,6 +52,8 @@ export class AppMonitorManager {
   constructor(options: AppMonitorManagerOptions) {
     this.settingsManager = options.settingsManager
     this.alertManager = options.alertManager
+    this.onLinkScanned = options.onLinkScanned
+    this.linkScanner = options.linkScanner
     this.platform = new PlatformSpecificManager()
     this.privacy = new PrivacyManager(options.settingsManager)
     this.extractor = new ContentExtractor()
@@ -52,13 +61,14 @@ export class AppMonitorManager {
   }
 
   startMonitoring(): void {
-    if (this.clipboardPollTimer || this.activeAppPollTimer) return
+    if (this.clipboardPollTimer || this.activeAppPollTimer || this.browserUrlPollTimer) return
 
     this.lastClipboardText = this.platform.getClipboardText()
     this.lastClipboardHtml = this.platform.getClipboardHtml()
 
     this.clipboardPollTimer = setInterval(() => this.pollClipboard(), CLIPBOARD_POLL_INTERVAL_MS)
     this.activeAppPollTimer = setInterval(() => this.pollActiveApp(), ACTIVE_APP_POLL_INTERVAL_MS)
+    this.browserUrlPollTimer = setInterval(() => this.pollBrowserUrl(), BROWSER_URL_POLL_INTERVAL_MS)
 
     this.powerUnsubscribe = this.platform.onPowerStateChange((state) => {
       this.suspended = state === 'suspend'
@@ -81,9 +91,14 @@ export class AppMonitorManager {
       clearInterval(this.activeAppPollTimer)
       this.activeAppPollTimer = null
     }
+    if (this.browserUrlPollTimer) {
+      clearInterval(this.browserUrlPollTimer)
+      this.browserUrlPollTimer = null
+    }
     this.powerUnsubscribe?.()
     this.powerUnsubscribe = null
     this.lastActiveAppId = null
+    this.lastBrowserUrl = null
     logger.info('AppMonitorManager: monitoring stopped')
   }
 
@@ -158,9 +173,14 @@ export class AppMonitorManager {
               : { type: 'clipboard', clipboard: {} }
 
       this.integrator.analyzeContent(content, context).then((result) => {
-        if (!result.threatDetected) return
+        if (!result.threatDetected) {
+          result.linkResults?.forEach((r) => this.onLinkScanned?.(r.riskScore))
+          return
+        }
         const settings = this.settingsManager.getSettings()
         const firstBadLink = result.linkResults?.find((r) => r.riskScore >= 50)
+        const riskScore = firstBadLink?.riskScore ?? result.riskScore ?? 60
+        this.onLinkScanned?.(riskScore)
         this.alertManager.addAlert(
           {
             type: 'suspicious_link',
@@ -169,6 +189,7 @@ export class AppMonitorManager {
             message: result.reasons[0] ?? 'Suspicious content detected',
             link: firstBadLink?.url,
             appId,
+            riskScore,
           },
           settings.alertPreferences
         )
@@ -183,5 +204,41 @@ export class AppMonitorManager {
   private detectForwardInText(text: string): boolean {
     const t = text.slice(0, 200).toLowerCase()
     return /^(forwarded|fwd|----------\s*forwarded)/im.test(t) || /^forwarded\s*:/im.test(t)
+  }
+
+  private async pollBrowserUrl(): Promise<void> {
+    if (this.suspended) return
+    if (!this.privacy.isGlobalMonitoringEnabled()) return
+    const appId = this.lastActiveAppId
+    if (appId !== 'chrome' && appId !== 'safari' && appId !== 'firefox') return
+    if (!this.privacy.isMonitoringAllowed(appId)) return
+
+    try {
+      const url = await this.platform.getCurrentBrowserUrl()
+      if (!url || url === this.lastBrowserUrl) return
+      this.lastBrowserUrl = url
+
+      const result = await this.linkScanner.scan(url)
+      this.onLinkScanned?.(result.riskScore)
+
+      if (result.riskScore >= 50) {
+        const settings = this.settingsManager.getSettings()
+        const severity = result.riskScore >= 80 ? 'high' : result.riskScore >= 60 ? 'medium' : 'low'
+        this.alertManager.addAlert(
+          {
+            type: 'phishing',
+            severity,
+            source: 'Browser',
+            message: result.explanation,
+            link: result.resolvedUrl ?? result.url,
+            appId,
+            riskScore: result.riskScore,
+          },
+          settings.alertPreferences
+        )
+      }
+    } catch (err) {
+      logger.debug('AppMonitorManager: pollBrowserUrl failed', err)
+    }
   }
 }
