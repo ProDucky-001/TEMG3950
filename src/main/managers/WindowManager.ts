@@ -1,4 +1,5 @@
 import { app, BrowserWindow, screen } from 'electron'
+import type { Event } from 'electron'
 import path from 'path'
 import fs from 'fs'
 import type { SettingsManager } from './SettingsManager'
@@ -108,7 +109,7 @@ export class WindowManager {
     win: BrowserWindow,
     type: 'dashboard' | 'settings'
   ): void {
-    win.on('close', (e) => {
+    win.on('close', (e: Event) => {
       if (type !== 'dashboard') return
       const settings = this.settingsManager.getSettings()
       if (settings.closeToTray) {
@@ -117,7 +118,8 @@ export class WindowManager {
       }
     })
 
-    win.on('minimize', (e) => {
+    // Electron v33 typings omit 'minimize'; event exists at runtime
+    ;(win as BrowserWindow & { on(event: 'minimize', listener: (e: Event) => void): void }).on('minimize', (e: Event) => {
       if (type !== 'dashboard') return
       const settings = this.settingsManager.getSettings()
       if (settings.minimizeToTray) {
@@ -155,7 +157,8 @@ export class WindowManager {
     if (isDev && devServerUrl) {
       const url = `${devServerUrl}${hash}`
       win.loadURL(url)
-      win.webContents.openDevTools()
+      // DevTools: open manually via Ctrl+Shift+I. Auto-open triggers Autofill.enable
+      // CDP errors in Electron's Chromium (known upstream bug, harmless but noisy).
     } else {
       const filePath = path.join(__dirname, '../renderer/index.html')
       win.loadURL(`file://${filePath}${hash}`)

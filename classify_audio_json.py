@@ -64,8 +64,10 @@ def main():
         sys.exit(1)
     path = sys.argv[1].strip().strip('"').strip("'")
     try:
+        import torch
+        device = "cuda" if torch.cuda.is_available() else None
         from voice_bot import VoiceBot
-        bot = VoiceBot()
+        bot = VoiceBot(device=device)
         result = bot.classify(path)
         print(json.dumps(result), flush=True)
     except Exception as e:
