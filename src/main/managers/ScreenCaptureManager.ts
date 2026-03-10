@@ -26,40 +26,22 @@ import { isRealUrl } from '../utils/urlUtils'
 import { writePageContentLog } from '../services/pageContentDebugLog'
 
 const isDev = process.env.NODE_ENV === 'development' || !!process.env.ELECTRON_VITE_DEV_SERVER_URL
-const DEFAULT_POLL_INTERVAL_MS = 2000
-/** Only update overlay state (grey/green) if it persists this long (ms). Prevents flicker. */
-const OVERLAY_STATE_DEBOUNCE_MS = 150
-/** How long (ms) to treat an app as "still on last email URL" when we have no URL (e.g. after tab switch). */
-const LAST_EMAIL_URL_TTL_MS = 60_000
-/** When extension reports tab state, trust it for this long (ms) for overlay. Reduces flicker when app URL detection is slow. */
-const EXTENSION_TAB_STATE_TTL_MS = 10_000
+const DEFAULT_POLL_INTERVAL_MS = 3000
+const DEBUG_LOG_PATH = '/Users/symok/Desktop/UST1-2/Anti Scam/.cursor/debug-2b6709.log'
+/** Show grey overlay on app window within this time when app is determined (ms).
+ * Budget: 100ms poll + 80ms debounce + this delay < 200ms total. */
+const OVERLAY_APP_DETERMINED_DELAY_MS = 10
+/** Structured debug log interval (ms). */
+const DEBUG_LOG_INTERVAL_MS = 2000
 
-/** Max wait for browser URL fetch so detection cycle stays under 1.5s. */
-const BROWSER_URL_FETCH_TIMEOUT_MS = 500
-
-/** Normalize app name for email URL cache key so "Chrome" and "chrome" match. */
-function emailCacheKey(appName: string): string {
-  return (appName || '').trim().toLowerCase() || 'unknown'
-}
-
-/** DIP bounds to physical screen rect for overlay setBounds — Windows only.
- *  On macOS, BrowserWindow.setBounds() already takes DIP; no conversion needed. */
-function dipToScreenRect(
-  win: BrowserWindow | null,
-  bounds: { x: number; y: number; width: number; height: number }
-): { x: number; y: number; width: number; height: number } {
-  if (process.platform === 'darwin') return bounds
-  if (typeof (screen as { dipToScreenRect?: (w: unknown, r: unknown) => unknown }).dipToScreenRect === 'function') {
-    return (screen as { dipToScreenRect: (w: BrowserWindow | null, r: typeof bounds) => typeof bounds }).dipToScreenRect(win, bounds)
-  }
-  const primary = screen.getPrimaryDisplay()
-  const scale = primary.scaleFactor ?? 1
-  if (scale === 1) return bounds
-  return {
-    x: Math.round(bounds.x * scale),
-    y: Math.round(bounds.y * scale),
-    width: Math.round(bounds.width * scale),
-    height: Math.round(bounds.height * scale),
+function getDebugLogPath(): string {
+  try {
+    const workspaceLog = path.join(process.cwd(), '.cursor', 'debug-detection.log')
+    const dir = path.dirname(workspaceLog)
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true })
+    return workspaceLog
+  } catch {
+    return path.join(app.getPath('userData'), 'debug-detection.log')
   }
 }
 
@@ -551,8 +533,8 @@ export class ScreenCaptureManager {
       logger.warn('ScreenCaptureManager: capture preload not found; screen capture will fail until preload is built')
     }
     this.captureWindow.setMenuBarVisibility(false)
-    if (isDev && process.env.ELECTRON_VITE_DEV_SERVER_URL) {
-      this.captureWindow.loadURL(`${process.env.ELECTRON_VITE_DEV_SERVER_URL}/capture.html`)
+    if (devServerUrl) {
+      this.captureWindow.loadURL(`${devServerUrl}/capture.html`)
     } else {
       this.captureWindow.loadFile(path.join(__dirname, '../renderer/capture.html'))
     }
@@ -918,8 +900,8 @@ export class ScreenCaptureManager {
         }
       }
     })
-    if (isDev && process.env.ELECTRON_VITE_DEV_SERVER_URL) {
-      this.overlayWindow.loadURL(`${process.env.ELECTRON_VITE_DEV_SERVER_URL}/recording-overlay.html`)
+    if (devServerUrl) {
+      this.overlayWindow.loadURL(`${devServerUrl}/recording-overlay.html`)
     } else {
       const toLoad = fs.existsSync(path.join(__dirname, '../renderer/recording-overlay.html'))
         ? path.join(__dirname, '../renderer/recording-overlay.html')
