@@ -6,6 +6,64 @@ document.addEventListener('DOMContentLoaded', async () => {
   const logCountEl = document.getElementById('logCount');
   const toggleContentBtn = document.getElementById('toggleContent');
   const contentViewer = document.getElementById('contentViewer');
+  const scanRiskEl = document.getElementById('scanRisk');
+  const scanRedFlagsEl = document.getElementById('scanRedFlags');
+  const reportBtn = document.getElementById('reportBtn');
+  const reportStatusEl = document.getElementById('reportStatus');
+
+  // Load and show latest scan result (risk score, red flags)
+  const { lastScanResult } = await chrome.storage.local.get('lastScanResult');
+  if (lastScanResult) {
+    scanRiskEl.textContent = 'Risk score: ' + (lastScanResult.maxRisk != null ? lastScanResult.maxRisk : '—');
+    if (lastScanResult.appReachable === false) {
+      scanRiskEl.textContent += ' (app not running)';
+    }
+    const flags = lastScanResult.redFlags || [];
+    scanRedFlagsEl.innerHTML = flags.length ? '<strong>Red flags:</strong><ul style="margin:4px 0 0; padding-left:16px;">' + flags.map(f => '<li>' + String(f).replace(/</g, '&lt;').substring(0, 120) + '</li>').join('') + '</ul>' : 'None identified';
+  } else {
+    scanRedFlagsEl.textContent = 'No scan yet. Open an email in Gmail or Outlook.';
+  }
+
+  // Report button: save to local file (download + send to app)
+  if (reportBtn && reportStatusEl) {
+    reportBtn.addEventListener('click', async () => {
+      const { lastScanResult: r } = await chrome.storage.local.get('lastScanResult');
+      if (!r) {
+        reportStatusEl.textContent = 'No scan data to report.';
+        return;
+      }
+      const report = {
+        pageUrl: r.pageUrl,
+        maxRisk: r.maxRisk,
+        warning: r.warning,
+        redFlags: r.redFlags || [],
+        results: (r.results || []).map(x => ({ url: x.url, riskScore: x.riskScore, explanation: x.explanation })),
+        timestamp: r.timestamp,
+        reportedAt: new Date().toISOString(),
+      };
+      const blob = new Blob([JSON.stringify(report, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'scamshield-report-' + Date.now() + '.json';
+      a.click();
+      URL.revokeObjectURL(url);
+      try {
+        const res = await fetch('http://127.0.0.1:8765/report', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(report),
+        });
+        if (res && res.ok) {
+          reportStatusEl.textContent = 'Saved to app reports file and downloaded.';
+        } else {
+          reportStatusEl.textContent = 'Downloaded. (App not running to save to file.)';
+        }
+      } catch (e) {
+        reportStatusEl.textContent = 'Downloaded. (App not running to save to file.)';
+      }
+    });
+  }
 
   // Check current tab
   try {

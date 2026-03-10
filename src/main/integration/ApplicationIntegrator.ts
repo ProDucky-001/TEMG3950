@@ -45,6 +45,7 @@ export class ApplicationIntegrator {
     }
 
     const scanResults = await Promise.all(
+      // Prioritise URLs first (order preserved from OCR: URL bar then body); then content scanner runs scam patterns on snippet.
       content.urls.map(async (url) => {
         try {
           const result = await this.linkScanner.scan(url, {
@@ -70,6 +71,7 @@ export class ApplicationIntegrator {
     }
 
     if (content.snippet && content.snippet.length > 50) {
+      // Scam patterns only on bounded snippet; no need to read unrelated full text.
       const aiResult = this.contentScanner.scan({
         text: content.snippet,
         source: content.sourceType === 'email' ? 'email' : content.sourceType === 'messaging' ? 'whatsapp' : 'generic',

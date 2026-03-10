@@ -2,7 +2,7 @@
  * Low-latency local link analyzer (<50ms). Cached by URL.
  */
 (function (global) {
-  const SUSPICIOUS_TLDS = ['.xyz', '.top', '.club', '.win', '.info', '.tk', '.ml', '.ga', '.cf', '.gq'];
+  const SUSPICIOUS_TLDS = ['.xyz', '.top', '.club', '.win', '.info', '.tk', '.ml', '.ga', '.cf', '.gq', '.php'];
   const PHISHING_PATTERNS = [
     /login|signin|verify|account.*update|security.*alert/i,
     /password.*reset|bank.*verify|urgent.*action/i,

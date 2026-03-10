@@ -1,6 +1,9 @@
 /**
  * Screen capture renderer. Runs in a hidden window; listens for capture-request,
- * uses desktopCapturer + getUserMedia, draws to canvas at up to 1920x1080 for better OCR, sends PNG to main.
+ * uses desktopCapturer + getUserMedia. Captures two regions for OCR:
+ * 1) URL bar only (top narrow strip)
+ * 2) Email body region (mid-right: 40–90% width, 30–80% height)
+ * Composites into one image (URL bar on top) so OCR reads URLs first, then email content.
  */
 const MAX_WIDTH = 1920
 const MAX_HEIGHT = 1080
@@ -15,18 +18,21 @@ declare global {
   }
 }
 
-/** Crop to top 50% of window: skip tabs (top 4%), capture next 46% (URL bar + page content). */
+/** URL bar only: skip tabs (top 4%), next 11% = address bar. */
 const URL_BAR_TOP_RATIO = 0.04
-const URL_BAR_HEIGHT_RATIO = 0.46
-/** Scale up URL bar crop for OCR so characters have more pixels (reduces mai->mail errors). */
-const URL_BAR_OCR_SCALE = 3
-/** Minimum canvas size for Tesseract: wide enough for full URL, avoids "Image too small to scale". */
+const URL_BAR_HEIGHT_RATIO = 0.11
+/** Email region: mid-right where body usually is — 40%–90% width, 30%–80% height. */
+const EMAIL_REGION_X_RATIO = 0.4
+const EMAIL_REGION_WIDTH_RATIO = 0.5
+const EMAIL_REGION_Y_RATIO = 0.3
+const EMAIL_REGION_HEIGHT_RATIO = 0.5
+/** Scale crops for OCR (more pixels = better recognition). */
+const OCR_SCALE = 2
 const MIN_OCR_WIDTH = 640
 const MIN_OCR_HEIGHT = 48
 
 /**
- * Light contrast stretch + grayscale for OCR. Preserves detail; no binarization.
- * Improves readability of grey/white URL bar text.
+ * Light contrast stretch + grayscale for OCR.
  */
 function enhanceContrastForOCR(ctx: CanvasRenderingContext2D, width: number, height: number): void {
   const imageData = ctx.getImageData(0, 0, width, height)
@@ -79,21 +85,46 @@ async function captureSource(sourceId: string): Promise<ArrayBuffer> {
     const { w: cw, h: ch } = scaleDimensions(w, h)
     const safeCw = Math.max(1, cw)
     const safeCh = Math.max(1, ch)
-    const topPx = safeCh * URL_BAR_TOP_RATIO
-    const barH = Math.max(80, Math.round(safeCh * URL_BAR_HEIGHT_RATIO))
+
+    // Region 1: URL bar only (top strip)
+    const urlBarTopPx = safeCh * URL_BAR_TOP_RATIO
+    const urlBarH = Math.max(40, Math.round(safeCh * URL_BAR_HEIGHT_RATIO))
+    const urlBarCw = Math.max(MIN_OCR_WIDTH, safeCw * OCR_SCALE)
+    const urlBarCh = Math.max(MIN_OCR_HEIGHT, urlBarH * OCR_SCALE)
+
+    // Region 2: Email body (mid-right: 40%–90% width, 30%–80% height)
+    const emailX = Math.round(safeCw * EMAIL_REGION_X_RATIO)
+    const emailW = Math.round(safeCw * EMAIL_REGION_WIDTH_RATIO)
+    const emailY = Math.round(safeCh * EMAIL_REGION_Y_RATIO)
+    const emailH = Math.round(safeCh * EMAIL_REGION_HEIGHT_RATIO)
+    const emailCw = Math.max(320, emailW * OCR_SCALE)
+    const emailCh = Math.max(200, emailH * OCR_SCALE)
+
+    const totalH = urlBarCh + emailCh
+    const totalW = Math.max(urlBarCw, emailCw)
     const canvas = document.createElement('canvas')
-    canvas.width = Math.max(MIN_OCR_WIDTH, safeCw * URL_BAR_OCR_SCALE)
-    canvas.height = Math.max(MIN_OCR_HEIGHT, barH * URL_BAR_OCR_SCALE)
+    canvas.width = totalW
+    canvas.height = totalH
     const ctx = canvas.getContext('2d')
     if (!ctx) throw new Error('No 2d context')
     ctx.imageSmoothingEnabled = true
     ctx.imageSmoothingQuality = 'high'
+
+    // Draw URL bar crop at top (source: full width, url bar strip)
     ctx.drawImage(
       video,
-      0, (topPx / safeCh) * h, w, (barH / safeCh) * h,
-      0, 0, canvas.width, canvas.height
+      0, (urlBarTopPx / safeCh) * h, w, (urlBarH / safeCh) * h,
+      0, 0, urlBarCw, urlBarCh
     )
-    enhanceContrastForOCR(ctx, canvas.width, canvas.height)
+
+    // Draw email region below (source: 40–90% width, 30–80% height)
+    ctx.drawImage(
+      video,
+      (emailX / safeCw) * w, (emailY / safeCh) * h, (emailW / safeCw) * w, (emailH / safeCh) * h,
+      0, urlBarCh, emailCw, emailCh
+    )
+    enhanceContrastForOCR(ctx, totalW, totalH)
+
     stream.getTracks().forEach((t) => t.stop())
     return new Promise<ArrayBuffer>((resolve, reject) => {
       canvas.toBlob(

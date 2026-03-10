@@ -406,6 +406,50 @@ function startDataRecordedServer(): void {
           res.end()
         }
       })
+    } else if (req.method === 'POST' && req.url === '/scan-links') {
+      let body = ''
+      req.on('data', (chunk) => { body += chunk })
+      req.on('end', async () => {
+        try {
+          const payload = JSON.parse(body) as { urls?: string[] }
+          const urls = Array.isArray(payload.urls) ? payload.urls.filter((u): u is string => typeof u === 'string') : []
+          const results = await Promise.all(urls.map((url) => linkScanner.scan(url, { debugContext: { isEmail: true, source: 'extension' } })))
+          res.writeHead(200, { 'Content-Type': 'application/json' })
+          res.end(
+            JSON.stringify({
+              results: results.map((r) => ({
+                url: r.url,
+                riskScore: r.riskScore,
+                threatTypes: r.threatTypes,
+                explanation: r.explanation,
+                riskBreakdown: r.riskBreakdown,
+              })),
+            })
+          )
+        } catch (err) {
+          logger.warn('scan-links error', err)
+          res.writeHead(500, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ error: 'Scan failed', results: [] }))
+        }
+      })
+    } else if (req.method === 'POST' && req.url === '/report') {
+      let body = ''
+      req.on('data', (chunk) => { body += chunk })
+      req.on('end', () => {
+        try {
+          const payload = JSON.parse(body) as Record<string, unknown>
+          const userData = app.getPath('userData')
+          const reportPath = path.join(userData, 'extension-reports.jsonl')
+          const line = JSON.stringify({ ...payload, reportedAt: new Date().toISOString() }) + '\n'
+          fs.appendFileSync(reportPath, line)
+          res.writeHead(200, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ ok: true }))
+        } catch (err) {
+          logger.warn('report save error', err)
+          res.writeHead(500)
+          res.end()
+        }
+      })
     } else {
       res.writeHead(404)
       res.end()

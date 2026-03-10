@@ -26,7 +26,20 @@ import { isRealUrl } from '../utils/urlUtils'
 import { writePageContentLog } from '../services/pageContentDebugLog'
 
 const isDev = process.env.NODE_ENV === 'development' || !!process.env.ELECTRON_VITE_DEV_SERVER_URL
+const devServerUrl = process.env.ELECTRON_RENDERER_URL || process.env.ELECTRON_VITE_DEV_SERVER_URL
 const DEFAULT_POLL_INTERVAL_MS = 3000
+/** TTL for per-app "last email URL" cache when tab has no URL (ms). */
+const LAST_EMAIL_URL_TTL_MS = 8_000
+/** TTL for extension-reported tab state (URL + isEmail) used for overlay (ms). */
+const EXTENSION_TAB_STATE_TTL_MS = 3_000
+/** Timeout when fetching browser URL via native bridge (ms). */
+const BROWSER_URL_FETCH_TIMEOUT_MS = 2_500
+/** Debounce: only send overlay state after it persists this long (ms). */
+const OVERLAY_STATE_DEBOUNCE_MS = 200
+
+function emailCacheKey(appName: string): string {
+  return (appName ?? '').trim().toLowerCase() || 'unknown'
+}
 const DEBUG_LOG_PATH = '/Users/symok/Desktop/UST1-2/Anti Scam/.cursor/debug-2b6709.log'
 /** Show grey overlay on app window within this time when app is determined (ms).
  * Budget: 100ms poll + 80ms debounce + this delay < 200ms total. */
@@ -660,7 +673,7 @@ export class ScreenCaptureManager {
       }
 
       const state: 'monitoring' | 'processing' =
-        this.captureInProgress ? 'processing' : stableEmailState ? 'monitoring' : 'processing'
+        stableEmailState ? 'monitoring' : 'processing'
 
       this.clearOverlayHideTimeout()
       this.setOverlayVisible(true, state, scaledBoundsForOverlay, windowNameForOverlay)
@@ -1065,6 +1078,7 @@ export class ScreenCaptureManager {
         })
       }
       const sourceType = getContentSourceType(appId)
+      // OCR image is composite: URL bar first, then email body (40–90% width, 30–80% height). Prioritise URLs then scam patterns.
       const content = this.extractor.extractFromText(text, sourceType === 'email' ? 'email' : 'clipboard', appId)
       if (content.urls.length === 0 && (!content.snippet || content.snippet.length < 30)) return
 

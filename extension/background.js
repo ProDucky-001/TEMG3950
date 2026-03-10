@@ -100,6 +100,47 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return false;
   }
 
+  // SCAN_LINKS_REQUEST: content script sends urls; we call app full link scanner and return whether to show warning
+  if (message.action === 'SCAN_LINKS_REQUEST') {
+    const urls = message.urls || [];
+    const pageUrl = message.pageUrl || '';
+    fetch('http://127.0.0.1:8765/scan-links', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ urls: urls })
+    })
+      .then(function(r) { return r.json(); })
+      .then(function(data) {
+        const results = data.results || [];
+        const maxRisk = results.length ? Math.max(...results.map(function(r) { return r.riskScore || 0; })) : 0;
+        const warning = maxRisk >= 50;
+        const redFlags = [];
+        results.forEach(function(r) {
+          if (r.riskBreakdown && Array.isArray(r.riskBreakdown)) {
+            r.riskBreakdown.forEach(function(b) { redFlags.push(b.reason || b.category); });
+          }
+          if (r.explanation) redFlags.push(r.explanation);
+        });
+        const lastScanResult = {
+          pageUrl: pageUrl,
+          warning: warning,
+          maxRisk: maxRisk,
+          redFlags: redFlags,
+          results: results,
+          appReachable: true,
+          timestamp: Date.now()
+        };
+        chrome.storage.local.set({ lastScanResult: lastScanResult });
+        sendResponse(lastScanResult);
+      })
+      .catch(function() {
+        const fallback = { pageUrl: pageUrl, warning: false, maxRisk: 0, redFlags: [], results: [], appReachable: false, timestamp: Date.now() };
+        chrome.storage.local.set({ lastScanResult: fallback });
+        sendResponse(fallback);
+      });
+    return true;
+  }
+
   // Handle log retrieval
   if (message.action === 'getDebugLogs') {
     chrome.storage.local.get('debugLogs').then(stored => {

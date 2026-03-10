@@ -153,6 +153,20 @@
     },
   };
 
+  function getLinksForScan() {
+    const links = document.querySelectorAll('a[href]');
+    const seen = {};
+    const urls = [];
+    links.forEach(function(link) {
+      const href = link.getAttribute('href');
+      if (href && (href.startsWith('http://') || href.startsWith('https://')) && !seen[href]) {
+        seen[href] = true;
+        urls.push(href);
+      }
+    });
+    return urls;
+  }
+
   // CRITICAL FIX: Use plain DOM elements, NOT Shadow DOM
   const Overlay = {
     element: null,
@@ -273,7 +287,6 @@
 
     const currentUrl = window.location.href;
 
-    // CRITICAL: Check cache BEFORE starting new scan
     if (state.currentResult && state.lastUrl === currentUrl && state.hasScanned) {
       updateUI(state.currentResult);
       return;
@@ -283,52 +296,46 @@
     state.lastUrl = currentUrl;
     Overlay.show('scanning');
 
-    try {
-      // Instant local analysis
-      const instantRisk = performInstantAnalysis();
+    captureEmailData();
 
-      // Show suspicious immediately if risk is high
-      if (instantRisk > 0.7) {
-        const result = { suspicious: true, riskScore: instantRisk, timestamp: Date.now() };
-        state.currentResult = result;
-        state.hasScanned = true;
-        updateUI(result);
+    const urls = getLinksForScan();
+    chrome.runtime.sendMessage(
+      { action: 'SCAN_LINKS_REQUEST', urls: urls, pageUrl: currentUrl },
+      function(response) {
         state.isScanning = false;
-        return;
+        if (!response) {
+          state.currentResult = { suspicious: false, riskScore: 0, timestamp: Date.now(), appReachable: false };
+          state.hasScanned = true;
+          Overlay.show('safe');
+          DebugLogger.warn('Scan: no response from background');
+          return;
+        }
+        const warning = response.appReachable && response.warning === true;
+        state.currentResult = {
+          suspicious: warning,
+          riskScore: response.maxRisk || 0,
+          timestamp: response.timestamp || Date.now(),
+          appReachable: response.appReachable,
+          redFlags: response.redFlags || [],
+          results: response.results || [],
+        };
+        state.hasScanned = true;
+        if (warning) {
+          Overlay.show('suspicious');
+          DebugLogger.info('Scan: app flagged risk', { maxRisk: response.maxRisk, redFlags: response.redFlags });
+        } else {
+          Overlay.show('safe');
+          if (!response.appReachable) DebugLogger.warn('Scan: app not reachable, showing Safe');
+        }
+        const pageUrl = window.location.href;
+        if (pageUrl !== state.lastNotifiedUrl) {
+          state.lastNotifiedUrl = pageUrl;
+          try {
+            chrome.runtime.sendMessage({ action: 'MAIL_DETECTED', url: pageUrl }, function() {});
+          } catch (e) {}
+        }
       }
-
-      // Get content for scam phrase check (Gmail and Outlook)
-      let content = '';
-      if (window.location.hostname === 'mail.google.com') {
-        const el = document.querySelector('.a3s.aiL');
-        if (el) content = el.textContent || '';
-      } else {
-        const outlookEl = document.querySelector('.view-content, .MessageBody');
-        if (outlookEl) content = (outlookEl.innerText || outlookEl.textContent || '').trim();
-      }
-
-      captureEmailData();
-
-      // Check scam phrases
-      const scamPhrases = ['urgent action required', 'verify your account', 'password reset'];
-      const contentLower = content.toLowerCase();
-      let phraseRisk = 0;
-      for (const phrase of scamPhrases) {
-        if (contentLower.includes(phrase)) { phraseRisk = 0.3; break; }
-      }
-
-      const totalRisk = Math.min(instantRisk + phraseRisk, 1.0);
-      const result = { suspicious: totalRisk > 0.5, riskScore: totalRisk, timestamp: Date.now() };
-
-      state.currentResult = result;
-      state.hasScanned = true;
-      updateUI(result);
-
-    } catch (error) {
-      DebugLogger.error('Scan failed', { error: error.message });
-    } finally {
-      state.isScanning = false;
-    }
+    );
   }
 
   function updateUI(result) {
