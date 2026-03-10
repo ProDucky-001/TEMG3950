@@ -20,6 +20,8 @@ export interface Alert {
   appId?: string
   /** Actual risk score (0-100) from link scan when available */
   riskScore?: number
+  /** Matched keywords or patterns that triggered the alert (for scam overlay) */
+  triggers?: string[]
 }
 
 export interface Settings {

@@ -9,10 +9,12 @@ const devServerUrl = process.env.ELECTRON_RENDERER_URL || process.env.ELECTRON_V
 const isDev = process.env.NODE_ENV === 'development' || !!devServerUrl
 
 export class WindowManager {
+  /** Held at instance scope so the window is not GC'd; required for macOS tray lifecycle. */
   private dashboardWindow: BrowserWindow | null = null
   private settingsWindow: BrowserWindow | null = null
   private settingsManager: SettingsManager
   private windowState: WindowStateStore
+  /** Set true before app.quit() so close handler allows actual close instead of hide. */
   private isQuitting = false
   private nextDashboardShowInactive = false
 
@@ -123,11 +125,9 @@ export class WindowManager {
     win.on('close', (e: Event) => {
       if (type !== 'dashboard') return
       if (this.isQuitting) return
-      const settings = this.settingsManager.getSettings()
-      if (settings.closeToTray) {
-        e.preventDefault()
-        win.hide()
-      }
+      // Prevent closing: hide to tray so app keeps running (macOS and others)
+      e.preventDefault()
+      win.hide()
     })
 
     // Electron v33 typings omit 'minimize'; event exists at runtime

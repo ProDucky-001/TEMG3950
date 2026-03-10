@@ -39,6 +39,9 @@ export class TrayManager {
 
     this.updateContextMenu()
     this.tray.on('double-click', () => this.windowManager.openDashboard())
+    if (process.platform !== 'darwin') {
+      this.tray.on('click', () => this.windowManager.openDashboard())
+    }
 
     this.statusInterval = setInterval(() => this.updateStatus(), 5000)
   }

@@ -6,8 +6,6 @@ const APP_NAME_TO_ID: Record<string, SupportedAppId> = {
   'google chrome': 'chrome',
   chrome: 'chrome',
   'microsoft edge': 'chrome',
-  firefox: 'firefox',
-  'mozilla firefox': 'firefox',
   whatsapp: 'whatsapp',
   telegram: 'telegram',
   discord: 'discord',
@@ -29,6 +27,6 @@ export function getAppIdFromProcessName(name: string): SupportedAppId | null {
 export function getContentSourceType(appId: SupportedAppId): 'email' | 'messaging' | 'browser' | 'clipboard' {
   if (appId === 'gmail' || appId === 'outlook' || appId === 'generic') return 'email'
   if (['whatsapp', 'telegram', 'discord', 'messages', 'slack'].includes(appId)) return 'messaging'
-  if (['safari', 'chrome', 'firefox'].includes(appId)) return 'browser'
+  if (['safari', 'chrome'].includes(appId)) return 'browser'
   return 'clipboard'
 }

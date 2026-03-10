@@ -34,12 +34,6 @@ export class URLAreaOCR {
         width: windowBounds.width - 140,
         height: 35,
       },
-      firefox: {
-        x: windowBounds.x + 80,
-        y: windowBounds.y + (this.isMac ? 35 : 10),
-        width: windowBounds.width - 160,
-        height: 32,
-      },
       edge: {
         x: windowBounds.x + 70,
         y: windowBounds.y + (this.isMac ? 55 : 10),

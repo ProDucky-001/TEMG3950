@@ -71,6 +71,14 @@ export interface ScamShieldAPI {
   onDetectionStateChange: (callback: (state: import('../shared/detection-types').DetectionState) => void) => () => void
   getDetectionSettings: () => Promise<import('../shared/detection-types').DetectionSettings>
   updateDetectionSettings: (settings: import('../shared/detection-types').DetectionSettings) => Promise<void>
+
+  // Phase 6: unified IPC listeners (main -> renderer)
+  onWindowUpdate: (callback: (state: import('../shared/detection-types').DetectionState) => void) => () => void
+  onEmailDetected: (callback: (state: import('../shared/detection-types').DetectionState) => void) => () => void
+  onScamAlert: (callback: (alert: Alert) => void) => () => void
+  onStatusUpdate: (callback: (payload: { enabled: boolean }) => void) => () => void
+  requestCapture: () => Promise<boolean>
+  dismissAlert: (payload?: unknown) => void
 }
 
 const api: ScamShieldAPI = {
@@ -143,6 +151,31 @@ const api: ScamShieldAPI = {
   getDetectionSettings: () => ipcRenderer.invoke(IPC_CHANNELS.DETECTION_GET_SETTINGS),
   updateDetectionSettings: (settings: import('../shared/detection-types').DetectionSettings) =>
     ipcRenderer.invoke(IPC_CHANNELS.DETECTION_UPDATE_SETTINGS, settings),
+
+  onWindowUpdate: (callback: (state: import('../shared/detection-types').DetectionState) => void) => {
+    const handler = (_e: Electron.IpcRendererEvent, state: import('../shared/detection-types').DetectionState) => callback(state)
+    ipcRenderer.on(IPC_CHANNELS.WINDOW_UPDATE, handler)
+    return () => ipcRenderer.removeListener(IPC_CHANNELS.WINDOW_UPDATE, handler)
+  },
+  onEmailDetected: (callback: (state: import('../shared/detection-types').DetectionState) => void) => {
+    const handler = (_e: Electron.IpcRendererEvent, state: import('../shared/detection-types').DetectionState) => callback(state)
+    ipcRenderer.on(IPC_CHANNELS.EMAIL_DETECTED, handler)
+    return () => ipcRenderer.removeListener(IPC_CHANNELS.EMAIL_DETECTED, handler)
+  },
+  onScamAlert: (callback: (alert: Alert) => void) => {
+    const handler = (_e: Electron.IpcRendererEvent, alert: Alert) => callback(alert)
+    ipcRenderer.on(IPC_CHANNELS.SCAM_ALERT, handler)
+    return () => ipcRenderer.removeListener(IPC_CHANNELS.SCAM_ALERT, handler)
+  },
+  onStatusUpdate: (callback: (payload: { enabled: boolean }) => void) => {
+    const handler = (_e: Electron.IpcRendererEvent, payload: { enabled: boolean }) => callback(payload)
+    ipcRenderer.on(IPC_CHANNELS.STATUS_UPDATE, handler)
+    return () => ipcRenderer.removeListener(IPC_CHANNELS.STATUS_UPDATE, handler)
+  },
+  requestCapture: () => ipcRenderer.invoke(IPC_CHANNELS.CAPTURE_START),
+  dismissAlert: (payload?: unknown) => {
+    ipcRenderer.send(IPC_CHANNELS.ALERT_DISMISS, payload)
+  },
 }
 
 contextBridge.exposeInMainWorld('scamshield', api)

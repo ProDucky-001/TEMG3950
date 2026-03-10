@@ -1,6 +1,7 @@
 import type { ScamDatabase } from './ScamDatabase'
 import { LinkAnalyzer } from './LinkAnalyzer'
 import { logger } from './logger'
+import { writeLinkScanDebugLog, type LinkScanDebugContext } from './linkScannerDebugLog'
 import {
   LinkDetectionResult,
   ThreatType,
@@ -8,6 +9,8 @@ import {
 } from '../../shared/link-detection-types'
 
 const MAX_RISK_SUM = 100
+
+export type LinkScanOptions = { debugContext?: LinkScanDebugContext }
 
 export class LinkScanner {
   private readonly analyzer: LinkAnalyzer
@@ -18,12 +21,16 @@ export class LinkScanner {
 
   /**
    * Analyze a URL asynchronously and return a full detection result.
+   * Optional debugContext (isEmail, source) is written to the link-scanner debug log.
    */
-  async scan(url: string): Promise<LinkDetectionResult> {
+  async scan(url: string, options?: LinkScanOptions): Promise<LinkDetectionResult> {
+    const debugContext = options?.debugContext
     const normalized = this.normalizeInput(url)
     if (!normalized) {
       logger.warn('LinkScanner: invalid URL input', url)
-      return this.invalidUrlResult(url)
+      const result = this.invalidUrlResult(url)
+      writeLinkScanDebugLog(result, debugContext)
+      return result
     }
 
     try {
@@ -43,7 +50,7 @@ export class LinkScanner {
         })
       }
 
-      return {
+      const result: LinkDetectionResult = {
         url: normalized,
         resolvedUrl: expanded !== normalized ? expanded : undefined,
         riskScore,
@@ -54,17 +61,22 @@ export class LinkScanner {
         riskBreakdown: breakdown,
         analyzedAt: Date.now(),
       }
+      writeLinkScanDebugLog(result, debugContext)
+      return result
     } catch (err) {
       logger.error('LinkScanner: analysis failed', normalized, err)
-      return this.errorResult(normalized, err)
+      const result = this.errorResult(normalized, err)
+      writeLinkScanDebugLog(result, debugContext)
+      return result
     }
   }
 
   /**
    * Scan multiple URLs. Returns results in the same order as input.
+   * Optional debugContext is applied to each scan and written to the debug log.
    */
-  async scanMany(urls: string[]): Promise<LinkDetectionResult[]> {
-    return Promise.all(urls.map((u) => this.scan(u)))
+  async scanMany(urls: string[], options?: LinkScanOptions): Promise<LinkDetectionResult[]> {
+    return Promise.all(urls.map((u) => this.scan(u, options)))
   }
 
   private normalizeInput(input: string): string | null {

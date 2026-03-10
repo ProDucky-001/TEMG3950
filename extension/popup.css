@@ -1,0 +1,23 @@
+.popup { padding: 12px 16px; min-width: 260px; font-family: system-ui, sans-serif; }
+.popup h1 { margin: 0 0 8px; font-size: 16px; }
+#status { margin: 0 0 4px; font-size: 13px; color: #374151; }
+#status.active { color: #059669; }
+#status.inactive { color: #6b7280; }
+#logCount { margin: 0 0 12px; font-size: 12px; color: #6b7280; }
+.actions { display: flex; flex-direction: column; gap: 8px; }
+button { padding: 8px 12px; border-radius: 6px; border: 1px solid #d1d5db; background: #f9fafb; cursor: pointer; font-size: 13px; }
+button:hover { background: #f3f4f6; }
+#clearLogs { background: #fef2f2; border-color: #fecaca; }
+#clearLogs:hover { background: #fee2e2; }
+.log-viewer { display: none; max-height: 300px; overflow: auto; margin-top: 4px; font-size: 11px; border: 1px solid #e5e7eb; padding: 8px; border-radius: 6px; background: #f9fafb; }
+.log-viewer.show { display: block; }
+.log-entry { margin-bottom: 4px; word-break: break-word; }
+.log-time { color: #888; margin-right: 4px; }
+.log-info { color: #059669; font-weight: 600; }
+.log-error { color: #dc2626; font-weight: 600; }
+.log-warn { color: #d97706; font-weight: 600; }
+.content-section { margin-top: 12px; }
+.content-viewer { display: none; max-height: 280px; overflow: auto; margin-top: 4px; font-size: 11px; border: 1px solid #e5e7eb; padding: 8px; border-radius: 6px; background: #f9fafb; white-space: pre-wrap; word-break: break-word; }
+.content-viewer.show { display: block; }
+.content-meta { font-size: 10px; color: #6b7280; margin-bottom: 6px; }
+.content-text { margin: 0; font-size: 11px; }

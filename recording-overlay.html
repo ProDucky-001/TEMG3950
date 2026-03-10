@@ -10,9 +10,11 @@
 
     .corners-container {
       position: absolute;
+      top: 0;
+      left: 0;
+      pointer-events: none;
       display: none;
     }
-
     .corners-container.visible {
       display: block;
     }
@@ -76,15 +78,61 @@
       bottom: 0; right: 0;
       width: 3px; height: 40px;
     }
+
+    /* Status indicator pill: top-right of active window, ~80x24px */
+    .status-pill {
+      position: absolute;
+      top: 8px;
+      right: 8px;
+      min-width: 80px;
+      height: 24px;
+      padding: 0 10px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 12px;
+      font-size: 12px;
+      font-weight: 600;
+      color: #fff;
+      white-space: nowrap;
+      max-width: 180px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      transition: background-color 0.45s ease;
+      pointer-events: none;
+      -webkit-font-smoothing: antialiased;
+    }
+    .status-pill.state-monitoring {
+      background-color: #22c55e;
+    }
+    .status-pill.state-processing {
+      background-color: #4a4a4a;
+    }
+    /* Debug log: last 3 actions, bottom-right; inline style on #debug-log sets base. */
+    #debug-log {
+      background: rgba(0, 0, 0, 0.5);
+      padding: 6px 8px;
+      border-radius: 4px;
+      max-width: 280px;
+      line-height: 1.4;
+      white-space: pre-wrap;
+      word-break: break-all;
+    }
+    /* System fonts: SF Pro (macOS), Segoe UI (Windows) */
+    .status-pill {
+      font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Roboto, sans-serif;
+    }
   </style>
 </head>
 <body>
   <div id="corners" class="corners-container" aria-hidden="true" role="presentation">
+    <div id="status-pill" class="status-pill state-processing" aria-hidden="true">Monitoring</div>
     <div class="bracket top-left"><div class="arm arm-h"></div><div class="arm arm-v"></div></div>
     <div class="bracket top-right"><div class="arm arm-h"></div><div class="arm arm-v"></div></div>
     <div class="bracket bottom-left"><div class="arm arm-h"></div><div class="arm arm-v"></div></div>
     <div class="bracket bottom-right"><div class="arm arm-h"></div><div class="arm arm-v"></div></div>
   </div>
+  <div id="debug-log" style="position:fixed; bottom:10px; right:10px; color:lime; font-family:monospace; font-size:10px; pointer-events:none;"></div>
   <script>
     (function () {
       var overlayAPI = window.overlayAPI;
@@ -95,9 +143,29 @@
 
       var GREY = '#808080';
       var GREEN = '#22c55e';
+      var appName = '';
+      var windowTitle = '';
+
+      var debugActions = [];
+      var DEBUG_MAX = 3;
+
+      function addDebugAction(label) {
+        debugActions.push(label);
+        if (debugActions.length > DEBUG_MAX) debugActions.shift();
+        var el = document.getElementById('debug-log');
+        if (el) el.textContent = debugActions.join('\n');
+      }
 
       function getColor() {
         return currentState === 'monitoring' ? GREEN : GREY;
+      }
+
+      function updateStatusPill() {
+        var pill = document.getElementById('status-pill');
+        if (!pill) return;
+        pill.className = 'status-pill state-' + currentState;
+        pill.textContent = currentState === 'monitoring' ? 'Email Detected' : (appName || 'Monitoring');
+        pill.title = windowTitle || appName || '';
       }
 
       function renderFrame() {
@@ -114,6 +182,7 @@
         container.style.width = b.width + 'px';
         container.style.height = b.height + 'px';
         container.style.setProperty('--bracket-color', getColor());
+        updateStatusPill();
       }
 
       function scheduleRender() {
@@ -123,15 +192,20 @@
 
       function applyState(state) {
         currentState = state || 'processing';
+        addDebugAction('State: ' + (state || 'processing'));
         scheduleRender();
       }
 
       function applyBounds(bounds) {
         pendingBounds = bounds;
+        addDebugAction('Bounds: ' + (bounds ? bounds.width + 'x' + bounds.height : 'null'));
         scheduleRender();
       }
 
       if (overlayAPI) {
+        if (overlayAPI.onRenderState) {
+          overlayAPI.onRenderState(function (state) { applyState(state); });
+        }
         if (overlayAPI.onState) {
           overlayAPI.onState(function (state) { applyState(state); });
         }
@@ -142,7 +216,13 @@
           overlayAPI.onWindowData(function (data) {
             applyState(data.state);
             applyBounds(data.bounds);
+            if (data.appName != null) appName = data.appName;
+            if (data.windowTitle != null) windowTitle = data.windowTitle;
+            updateStatusPill();
           });
+        }
+        if (overlayAPI.onDebugLogEntry) {
+          overlayAPI.onDebugLogEntry(function (line) { addDebugAction(line); });
         }
       }
     })();

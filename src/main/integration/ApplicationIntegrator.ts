@@ -47,7 +47,12 @@ export class ApplicationIntegrator {
     const scanResults = await Promise.all(
       content.urls.map(async (url) => {
         try {
-          const result = await this.linkScanner.scan(url)
+          const result = await this.linkScanner.scan(url, {
+            debugContext: {
+              isEmail: context?.type === 'email',
+              source: context?.type ?? 'content',
+            },
+          })
           return { url: result.url, riskScore: result.riskScore, explanation: result.explanation }
         } catch (err) {
           logger.debug('ApplicationIntegrator: link scan failed', url, err)

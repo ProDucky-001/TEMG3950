@@ -17,29 +17,49 @@ import type { WindowInfo } from '../detection/types'
 import { DetectionCache } from '../utils/DetectionCache'
 import { PrivacyManager } from '../integration/PrivacyManager'
 import { OCRProcessor } from '../services/OCRProcessor'
-import { preprocessForOCR, preprocessForOCRFirefox, cleanOCRText } from '../detection/imagePreprocess'
+import { preprocessForOCR, cleanOCRText } from '../detection/imagePreprocess'
+import { isEmailUrl as isEmailUrlFromPatterns } from '../detection/EmailPatterns'
 import { getContentSourceType, getAppIdFromProcessName } from '../integration/appMapping'
 import type { ContentContext } from '../../shared/integration-types'
 import { logger } from '../services/logger'
 import { isRealUrl } from '../utils/urlUtils'
+import { writePageContentLog } from '../services/pageContentDebugLog'
 
 const isDev = process.env.NODE_ENV === 'development' || !!process.env.ELECTRON_VITE_DEV_SERVER_URL
-const DEFAULT_POLL_INTERVAL_MS = 3000
-const DEBUG_LOG_PATH = '/Users/symok/Desktop/UST1-2/Anti Scam/.cursor/debug-2b6709.log'
-/** Show grey overlay on app window within this time when app is determined (ms).
- * Budget: 100ms poll + 80ms debounce + this delay < 200ms total. */
-const OVERLAY_APP_DETERMINED_DELAY_MS = 10
-/** Structured debug log interval (ms). */
-const DEBUG_LOG_INTERVAL_MS = 2000
+const DEFAULT_POLL_INTERVAL_MS = 2000
+/** Only update overlay state (grey/green) if it persists this long (ms). Prevents flicker. */
+const OVERLAY_STATE_DEBOUNCE_MS = 150
+/** How long (ms) to treat an app as "still on last email URL" when we have no URL (e.g. after tab switch). */
+const LAST_EMAIL_URL_TTL_MS = 60_000
+/** When extension reports tab state, trust it for this long (ms) for overlay. Reduces flicker when app URL detection is slow. */
+const EXTENSION_TAB_STATE_TTL_MS = 10_000
 
-function getDebugLogPath(): string {
-  try {
-    const workspaceLog = path.join(process.cwd(), '.cursor', 'debug-detection.log')
-    const dir = path.dirname(workspaceLog)
-    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true })
-    return workspaceLog
-  } catch {
-    return path.join(app.getPath('userData'), 'debug-detection.log')
+/** Max wait for browser URL fetch so detection cycle stays under 1.5s. */
+const BROWSER_URL_FETCH_TIMEOUT_MS = 500
+
+/** Normalize app name for email URL cache key so "Chrome" and "chrome" match. */
+function emailCacheKey(appName: string): string {
+  return (appName || '').trim().toLowerCase() || 'unknown'
+}
+
+/** DIP bounds to physical screen rect for overlay setBounds — Windows only.
+ *  On macOS, BrowserWindow.setBounds() already takes DIP; no conversion needed. */
+function dipToScreenRect(
+  win: BrowserWindow | null,
+  bounds: { x: number; y: number; width: number; height: number }
+): { x: number; y: number; width: number; height: number } {
+  if (process.platform === 'darwin') return bounds
+  if (typeof (screen as { dipToScreenRect?: (w: unknown, r: unknown) => unknown }).dipToScreenRect === 'function') {
+    return (screen as { dipToScreenRect: (w: BrowserWindow | null, r: typeof bounds) => typeof bounds }).dipToScreenRect(win, bounds)
+  }
+  const primary = screen.getPrimaryDisplay()
+  const scale = primary.scaleFactor ?? 1
+  if (scale === 1) return bounds
+  return {
+    x: Math.round(bounds.x * scale),
+    y: Math.round(bounds.y * scale),
+    width: Math.round(bounds.width * scale),
+    height: Math.round(bounds.height * scale),
   }
 }
 
@@ -79,45 +99,51 @@ export class ScreenCaptureManager {
 
   private captureWindow: BrowserWindow | null = null
   private overlayWindow: BrowserWindow | null = null
-  private overlayCheckTimer: ReturnType<typeof setInterval> | null = null
   private pollTimer: ReturnType<typeof setInterval> | null = null
+  /** Prevents overlapping overlay updates (getContextAndBounds can be slow). */
+  private overlayUpdateInProgress = false
   /** Debounce: show overlay after 200ms of email active; hide after 400ms of inactive. */
   private overlayShowTimeout: ReturnType<typeof setTimeout> | null = null
   private overlayHideTimeout: ReturnType<typeof setTimeout> | null = null
+  /** Hysteresis: stable email state to prevent green/grey flicker. */
+  private currentEmailState = false
+  private lastEmailStateChangeTime = 0
+  private negativeDetectionCount = 0
   private pendingOverlayShow: { state: 'monitoring' | 'processing'; bounds: { x: number; y: number; width: number; height: number } | undefined; windowName: string } | null = null
   private permissionStatus: ScreenCapturePermissionStatus = 'unknown'
   private captureInProgress = false
   private lastOverlayVisible = false
   private lastOverlayState: 'monitoring' | 'processing' = 'monitoring'
+  /** Last state actually sent to overlay (for debouncer). 'NONE' when overlay hidden. */
+  private lastRenderedOverlayState: 'monitoring' | 'processing' | 'NONE' = 'NONE'
+  /** Debounce timer: only send state to overlay after it persists OVERLAY_STATE_DEBOUNCE_MS. */
+  private overlayStateDebounceTimer: ReturnType<typeof setTimeout> | null = null
   /** When we detected "inbox" or "mail.google"/"gmail.com" in OCR, treat as email until this time. */
   private lastInboxHintUntil = 0
   /** When we detected Outlook in OCR, treat as email until this time. */
   private lastOutlookHintUntil = 0
   private static readonly EMAIL_HINT_MS = 5000
+  /** Last bounds and app when we were on email (for sticky green overlay). */
+  private lastEmailOverlayBounds: { x: number; y: number; width: number; height: number } | null = null
+  private lastEmailOverlayWindowName = ''
+  private lastTimeWeWentGreen = 0
   private lastOverlayBounds: { x: number; y: number; width: number; height: number } | null = null
   private lastFrontmostAppName = ''
   private lastValidBounds: { x: number; y: number; width: number; height: number } | null = null
   private lastValidBoundsApp = ''
   private cachedBrowserUrl: string | null = null
+  private displayChangeUnsubscribe: (() => void) | null = null
   private cachedBrowserUrlTime = 0
   private static readonly URL_CACHE_TTL_MS = 800
+  /** Per-app cache: when we have no URL after a tab switch, treat as email if we recently saw an email URL for this app. */
+  private lastEmailUrlByApp = new Map<string, { url: string; timestamp: number }>()
   private nextPollTimeout: ReturnType<typeof setTimeout> | null = null
   /** Set when we request capture so handleCaptureResult can update cache. */
   private lastCacheKey: string | null = null
   private _overlayLogOnce = false
-
-  // --- Structured debug log state ---
-  private debugLogTimer: ReturnType<typeof setInterval> | null = null
-  private lastDebugLogLine: string | null = null
-  private debugState = {
-    application: '' as string,
-    tabDetected: '' as string,
-    isEmail: false as boolean,
-    url: '' as string,
-    contentPreview: '' as string,
-    overlayColor: 'none' as 'none' | 'grey' | 'green',
-    hoverLink: '' as string,
-  }
+  private unsubscribeDetectionState: (() => void) | null = null
+  /** When extension reports current tab URL + isEmail, use this for overlay when app URL detection is unreliable. */
+  private lastExtensionTabState: { url: string; isEmail: boolean; timestamp: number } | null = null
 
   constructor(options: ScreenCaptureManagerOptions) {
     this.settingsManager = options.settingsManager
@@ -141,6 +167,18 @@ export class ScreenCaptureManager {
     return this.permissionStatus
   }
 
+  /**
+   * Called when the extension reports the current tab URL and whether it is an email tab.
+   * Used as source of truth for overlay (green/grey) when app URL detection is slow or flickers.
+   */
+  setExtensionTabState(url: string | null, isEmail: boolean): void {
+    const now = Date.now()
+    this.lastExtensionTabState =
+      url != null && url.trim() !== ''
+        ? { url: url.trim(), isEmail: !!isEmail, timestamp: now }
+        : { url: '', isEmail: false, timestamp: now }
+  }
+
   /** Instructions for granting screen recording (macOS) or equivalent (Windows). */
   getPermissionInstructions(): { platform: string; steps: string } {
     if (process.platform === 'darwin') {
@@ -159,10 +197,42 @@ export class ScreenCaptureManager {
     return { platform: 'Linux', steps: 'Screen capture may require additional permissions depending on your environment.' }
   }
 
+  /**
+   * Request one immediate capture (e.g. from renderer via capture:start IPC).
+   * No-op if capture already in progress or permission denied. Returns true if request was sent.
+   */
+  requestCaptureOnce(): boolean {
+    if (this.captureInProgress || this.permissionStatus === 'denied') return false
+    this.ensureCaptureWindow()
+    const win = this.captureWindow
+    if (!win || win.isDestroyed()) return false
+    try {
+      this.captureInProgress = true
+      this.updateOverlayVisibility()
+      win.webContents.send('capture-request')
+      return true
+    } catch {
+      this.captureInProgress = false
+      return false
+    }
+  }
+
   start(): void {
     if (this.pollTimer) return
     this.ensureCaptureWindow()
-    this.overlayCheckTimer = setInterval(() => this.updateOverlayVisibility(), 100)
+    // Overlay is updated only after full URL detection (in poll() and on detection state change), not on a timer
+    if (this.enabled) {
+      const s = this.settingsManager.getSettings()
+      if (s.showRecordingIndicator !== false) this.ensureOverlayWindow()
+    }
+    // One initial overlay update so state is correct before first poll runs
+    this.updateOverlayVisibility()
+    this.subscribeDisplayChanges()
+    if (this.detectionManager) {
+      this.unsubscribeDetectionState = this.detectionManager.onStateChange(() => {
+        this.updateOverlayVisibility()
+      })
+    }
     ipcMain.on('capture-result', this.handleCaptureResult)
     ipcMain.handle('capture-get-sources', async (_e, opts: { types: ('window' | 'screen')[] }) => {
       const sources = await desktopCapturer.getSources(opts)
@@ -174,7 +244,6 @@ export class ScreenCaptureManager {
       this.scheduleNextPoll()
     }, Math.min(5000, pollIntervalMs))
     setTimeout(() => this.probeCaptureCapability(), 4500)
-    this.startDebugLog()
     logger.info('ScreenCaptureManager: started')
   }
 
@@ -187,9 +256,9 @@ export class ScreenCaptureManager {
       clearInterval(this.pollTimer)
       this.pollTimer = null
     }
-    if (this.overlayCheckTimer) {
-      clearInterval(this.overlayCheckTimer)
-      this.overlayCheckTimer = null
+    if (this.unsubscribeDetectionState) {
+      this.unsubscribeDetectionState()
+      this.unsubscribeDetectionState = null
     }
     if (this.overlayShowTimeout) {
       clearTimeout(this.overlayShowTimeout)
@@ -200,6 +269,7 @@ export class ScreenCaptureManager {
       this.overlayHideTimeout = null
     }
     this.pendingOverlayShow = null
+    this.unsubscribeDisplayChanges()
     ipcMain.removeListener('capture-result', this.handleCaptureResult)
     ipcMain.removeHandler('capture-get-sources')
     this.setOverlayVisible(false)
@@ -207,14 +277,42 @@ export class ScreenCaptureManager {
     this.destroyCaptureWindow()
     this.detectionCache.clear()
     this.priorityManager.reset()
-    this.stopDebugLog()
     this.ocr.terminate()
     logger.info('ScreenCaptureManager: stopped')
   }
 
+  private subscribeDisplayChanges(): void {
+    this.unsubscribeDisplayChanges()
+    const onDisplayChange = (): void => {
+      this.reapplyOverlayBounds()
+      this.updateOverlayVisibility()
+    }
+    screen.on('display-metrics-changed', onDisplayChange)
+    screen.on('display-added', onDisplayChange)
+    screen.on('display-removed', onDisplayChange)
+    this.displayChangeUnsubscribe = () => {
+      screen.removeListener('display-metrics-changed', onDisplayChange)
+      screen.removeListener('display-added', onDisplayChange)
+      screen.removeListener('display-removed', onDisplayChange)
+      this.displayChangeUnsubscribe = null
+    }
+  }
+
+  private unsubscribeDisplayChanges(): void {
+    if (this.displayChangeUnsubscribe) {
+      this.displayChangeUnsubscribe()
+    }
+  }
+
+  /** Re-calculate overlay after display config change: re-fetch window bounds and update. */
+  private reapplyOverlayBounds(): void {
+    this.updateOverlayVisibility()
+  }
+
   private getPollIntervalMs(): number {
     const ms = this.settingsManager.getSettings().screenCapturePollIntervalMs
-    return typeof ms === 'number' && ms >= 1000 ? ms : DEFAULT_POLL_INTERVAL_MS
+    const fromSettings = typeof ms === 'number' && ms >= 500 ? ms : DEFAULT_POLL_INTERVAL_MS
+    return Math.max(DEFAULT_POLL_INTERVAL_MS, fromSettings)
   }
 
   /**
@@ -260,24 +358,19 @@ export class ScreenCaptureManager {
           this.lastValidBoundsApp = windowName
         }
         const appId = this.detectionStateToAppId(state.activeApp) ?? getAppIdFromProcessName(windowName)
-        let browserUrl = state.url ?? info.url ?? null
+        // Prefer DetectionManager state, then WindowTracker enriched snapshot (avoids extra AppleScript when tracker already has URL)
+        const trackerSnapshot = this.detectionManager?.getWindowTracker?.()?.getCurrentSnapshot?.() ?? null
+        let browserUrl = state.url ?? trackerSnapshot?.url ?? info.url ?? null
         if (!browserUrl) {
-          const isBrowser = ['chrome', 'safari', 'firefox'].includes(appId ?? '')
-            || /chrome|safari|firefox|brave|edge|browser/i.test(windowName)
-          // #region agent log
-          try {
-            const now = Date.now()
-            const cached = this.cachedBrowserUrl && now - this.cachedBrowserUrlTime < ScreenCaptureManager.URL_CACHE_TTL_MS
-            fs.appendFileSync(DEBUG_LOG_PATH, JSON.stringify({ sessionId: '2b6709', location: 'ScreenCaptureManager:getContextAndBounds', message: 'browser url path', data: { ownerName: windowName, appId, isBrowser, browserUrlEmpty: true, willFetchUrl: isBrowser && !cached }, timestamp: Date.now(), hypothesisId: 'S1' }) + '\n')
-          } catch (_) {}
-          // #endregion
+          const isBrowser = ['chrome', 'safari'].includes(appId ?? '')
+            || /chrome|safari|brave|edge|browser/i.test(windowName)
           if (isBrowser) {
             const now = Date.now()
             if (this.cachedBrowserUrl && now - this.cachedBrowserUrlTime < ScreenCaptureManager.URL_CACHE_TTL_MS) {
               browserUrl = this.cachedBrowserUrl
             } else {
               try {
-                browserUrl = await this.platform.getCurrentBrowserUrl()
+                browserUrl = await this.getCurrentBrowserUrlWithTimeout()
                 this.cachedBrowserUrl = browserUrl
                 this.cachedBrowserUrlTime = now
               } catch { /* AppleScript URL fallback failed */ }
@@ -286,6 +379,26 @@ export class ScreenCaptureManager {
             this.cachedBrowserUrl = null
           }
         } else {
+          const isBrowser = ['chrome', 'safari'].includes(appId ?? '')
+            || /chrome|safari|brave|edge|browser/i.test(windowName)
+          if (isBrowser && !this.isEmailUrl(browserUrl)) {
+            const recent = this.lastEmailUrlByApp.get(emailCacheKey(windowName))
+            if (recent != null && (Date.now() - recent.timestamp) < LAST_EMAIL_URL_TTL_MS) {
+              this.cachedBrowserUrl = null
+              try {
+                const fresh = await this.getCurrentBrowserUrlWithTimeout()
+                if (fresh && this.isEmailUrl(fresh)) {
+                  browserUrl = fresh
+                  this.cachedBrowserUrl = fresh
+                  this.cachedBrowserUrlTime = Date.now()
+                } else {
+                  browserUrl = recent.url
+                }
+              } catch {
+                browserUrl = recent.url
+              }
+            }
+          }
           this.cachedBrowserUrl = browserUrl
           this.cachedBrowserUrlTime = Date.now()
         }
@@ -304,7 +417,7 @@ export class ScreenCaptureManager {
             browserUrl,
             windowName: windowName || info.title || '',
           },
-          rawResult: bounds && bounds.width >= minW && bounds.height >= minH ? { bounds, primaryDisplay: primary } : null,
+          rawResult: bounds ? { bounds, primaryDisplay: primary } : null,
         }
       }
       // active-win unavailable — fall through to AppleScript path below
@@ -327,25 +440,25 @@ export class ScreenCaptureManager {
   }
 
   private isEmailUrl(url: string | null | undefined): boolean {
-    if (!url) return false
-    const lower = url.trim().toLowerCase()
-    const withScheme = /^https?:\/\//i.test(lower) ? lower : 'https://' + lower
-    if (/mail\.google\.com|gmail\.com/.test(withScheme)) return true
-    const emailDomains = [
-      'outlook.live.com', 'outlook.office.com', 'outlook.com',
-      'outlook.office365.com', 'outlook.cloud.microsoft.com',
-      'mail.yahoo.com', 'mail.protonmail.com', 'protonmail.com', 'proton.me',
-    ]
-    if (emailDomains.some((d) => withScheme.includes(d))) return true
-    return false
+    return isEmailUrlFromPatterns(url)
+  }
+
+  /** Call platform.getCurrentBrowserUrl() with a timeout so detection never blocks >1.5s. */
+  private getCurrentBrowserUrlWithTimeout(): Promise<string | null> {
+    return Promise.race([
+      this.platform.getCurrentBrowserUrl(),
+      new Promise<null>((_, reject) =>
+        setTimeout(() => reject(new Error('browser URL timeout')), BROWSER_URL_FETCH_TIMEOUT_MS)
+      ),
+    ])
   }
 
   private emailUrlToAppId(url: string | null | undefined): import('../../shared/integration-types').SupportedAppId | null {
     if (!url) return null
     const lower = url.trim().toLowerCase()
     if (/mail\.google\.com|gmail\.com/.test(lower)) return 'gmail'
-    if (/outlook\.(live|office|office365|cloud\.microsoft)\.com|outlook\.com/.test(lower)) return 'outlook'
-    if (/mail\.yahoo\.com/.test(lower)) return 'generic'
+    if (/outlook\.(live|office|office365|cloud\.microsoft)(\.com)?|outlook\.com/.test(lower)) return 'outlook'
+    if (/mail\.yahoo\.com|yahoo\.com/.test(lower)) return 'generic'
     if (/protonmail\.com|proton\.me/.test(lower)) return 'generic'
     return null
   }
@@ -453,92 +566,143 @@ export class ScreenCaptureManager {
   }
 
   private async updateOverlayVisibility(): Promise<void> {
+    if (this.overlayUpdateInProgress) return
+    this.overlayUpdateInProgress = true
     try {
       const settings = this.settingsManager.getSettings()
       const enabled = this.enabled
       if (!enabled) {
         this.clearOverlayShowTimeout()
         this.setOverlayVisible(false)
+        this.currentEmailState = false
+        this.negativeDetectionCount = 0
+        this.lastEmailUrlByApp.clear()
         return
       }
       if (settings.showRecordingIndicator === false) {
         this.clearOverlayShowTimeout()
         this.setOverlayVisible(false)
+        this.currentEmailState = false
+        this.negativeDetectionCount = 0
+        this.lastEmailUrlByApp.clear()
         return
       }
+
+      // Get window bounds: prefer getContextAndBounds() (DetectionManager or AppleScript), then direct AppleScript.
       const { context, rawResult } = await this.getContextAndBounds()
-      const primaryDisplay = rawResult?.primaryDisplay ?? screen.getPrimaryDisplay()
-      let bounds: { x: number; y: number; width: number; height: number } | null = null
-      if (rawResult) {
-        const { bounds: raw } = rawResult
-        const pr = primaryDisplay.bounds
-        const relX = raw.x - pr.x
-        const relY = raw.y - pr.y
-        const visibleRight = Math.min(relX + raw.width, pr.width)
-        const visibleBottom = Math.min(relY + raw.height, pr.height)
-        const clampedX = Math.max(0, relX)
-        const clampedY = Math.max(0, relY)
-        const visW = visibleRight - clampedX
-        const visH = visibleBottom - clampedY
-        if (visW > 200 && visH > 200) {
-          bounds = { x: clampedX, y: clampedY, width: visW, height: visH }
-        }
-      }
-      const minW = Math.max(400, primaryDisplay.bounds.width * 0.5)
-      const minH = Math.max(300, primaryDisplay.bounds.height * 0.4)
-      const hasWindowBounds = bounds != null && bounds.width >= minW && bounds.height >= minH
-      const hasApp = !!(context.windowName)
-
-      const urlIsEmail = this.isEmailUrl(context.browserUrl)
-      const isEmailTab =
-        context.isEmailClientActive ||
-        urlIsEmail ||
-        ((context.appId === 'chrome' || context.appId === 'safari' || context.appId === 'firefox') &&
-          (this.lastInboxHintUntil > Date.now() || this.lastOutlookHintUntil > Date.now()))
-
-      // Show grey brackets for ANY application with valid bounds, green for email
-      const show = hasWindowBounds && (hasApp || this.captureInProgress)
-
-      // Grey = any app determined. Green = email tab confirmed.
-      const state: 'monitoring' | 'processing' =
-        this.captureInProgress ? 'processing' : isEmailTab ? 'monitoring' : 'processing'
-
-      const currentApp = context.windowName || ''
-      if (currentApp !== this.debugState.application) {
-        this.debugState.contentPreview = ''
-        this.debugState.url = ''
-      }
-      this.debugState.application = currentApp
-      this.debugState.tabDetected = context.appId || currentApp
-      this.debugState.isEmail = isEmailTab
-      if (context.browserUrl) this.debugState.url = context.browserUrl
-
-      if (show) {
-        this.clearOverlayHideTimeout()
-        const boundsToUse = bounds ?? undefined
-        if (this.lastOverlayVisible) {
-          this.setOverlayVisible(true, state, boundsToUse, context.windowName)
-        } else if (this.captureInProgress || isEmailTab) {
-          this.setOverlayVisible(true, state, boundsToUse, context.windowName)
-        } else {
-          this.pendingOverlayShow = { state, bounds: boundsToUse, windowName: context.windowName }
-          if (!this.overlayShowTimeout) {
-            this.overlayShowTimeout = setTimeout(() => {
-              this.overlayShowTimeout = null
-              const p = this.pendingOverlayShow
-              this.pendingOverlayShow = null
-              if (p) this.setOverlayVisible(true, p.state, p.bounds, p.windowName)
-            }, OVERLAY_APP_DETERMINED_DELAY_MS)
-          }
-        }
-      } else {
+      let windowBounds = rawResult?.bounds ?? (await this.getWindowBoundsFromAppleScript())
+      const minOverlaySize = 50
+      if (!windowBounds || windowBounds.width < minOverlaySize || windowBounds.height < minOverlaySize) {
         this.clearOverlayShowTimeout()
         this.pendingOverlayShow = null
-        this.scheduleOverlayHide()
+        this.setOverlayVisible(false)
+        return
       }
+      const now = Date.now()
+      const urlIsEmail = this.isEmailUrl(context.browserUrl)
+      const currentApp = context.windowName || ''
+      const isBrowser = (context.appId === 'chrome' || context.appId === 'safari') ||
+        /chrome|safari|brave|edge|browser/i.test(currentApp)
+
+      if (urlIsEmail && context.browserUrl) {
+        this.lastEmailUrlByApp.set(emailCacheKey(currentApp), { url: context.browserUrl, timestamp: now })
+      }
+
+      const cachedEmailForApp = isBrowser && !context.browserUrl?.trim()
+        ? this.lastEmailUrlByApp.get(emailCacheKey(currentApp))
+        : null
+
+      if (cachedEmailForApp != null && (now - cachedEmailForApp.timestamp) >= LAST_EMAIL_URL_TTL_MS) {
+        this.lastEmailUrlByApp.delete(emailCacheKey(currentApp))
+      }
+
+      // Prefer extension-reported tab state when recent (reduces flicker; extension sees tab switches immediately)
+      const extensionStateRecent =
+        this.lastExtensionTabState != null &&
+        now - this.lastExtensionTabState.timestamp < EXTENSION_TAB_STATE_TTL_MS
+      const useExtensionForEmail =
+        isBrowser && extensionStateRecent && this.lastExtensionTabState != null
+
+      // Full non-email URL: we have a real URL and it is not an email domain (so we can leave green)
+      const hasFullNonEmailUrl =
+        isBrowser &&
+        context.browserUrl != null &&
+        context.browserUrl.trim() !== '' &&
+        isRealUrl(context.browserUrl) &&
+        !this.isEmailUrl(context.browserUrl)
+
+      // Green when email URL or extension says email; persist green until we see a full non-email URL
+      let isEmailTab: boolean
+      if (isBrowser) {
+        if (useExtensionForEmail) {
+          isEmailTab = this.lastExtensionTabState!.isEmail
+        } else if (urlIsEmail) {
+          isEmailTab = true
+        } else if (hasFullNonEmailUrl) {
+          isEmailTab = false
+        } else {
+          // No definitive URL or empty/stale: persist previous state (stay green until we get a non-email URL)
+          isEmailTab = this.currentEmailState
+        }
+      } else {
+        isEmailTab = context.isEmailClientActive
+      }
+
+      if (isEmailTab) {
+        this.currentEmailState = true
+        this.negativeDetectionCount = 0
+        this.lastEmailStateChangeTime = now
+        this.lastTimeWeWentGreen = now
+        this.lastEmailOverlayBounds = { ...windowBounds }
+        this.lastEmailOverlayWindowName = context.windowName || ''
+      } else {
+        // Only false when we have a full non-email URL or extension said not email; go grey immediately
+        this.currentEmailState = false
+        this.negativeDetectionCount = 0
+        this.lastEmailStateChangeTime = now
+      }
+      const stableEmailState = this.currentEmailState
+      // No sticky green: overlay bounds always follow current window
+      const boundsForOverlay = windowBounds
+      const windowNameForOverlay = context.windowName
+
+      const OVERLAY_BOUNDS_SCALE = 1.8
+      const OVERLAY_H_SCALE = 1.35
+      const OVERLAY_OFFSET_X = 0
+      const OVERLAY_OFFSET_Y = 25
+      const scaledBoundsForOverlay: { x: number; y: number; width: number; height: number } = {
+        x: boundsForOverlay.x + OVERLAY_OFFSET_X,
+        y: boundsForOverlay.y + OVERLAY_OFFSET_Y,
+        width: Math.round(boundsForOverlay.width * OVERLAY_BOUNDS_SCALE),
+        height: Math.round(boundsForOverlay.height * OVERLAY_H_SCALE),
+      }
+
+      const state: 'monitoring' | 'processing' =
+        this.captureInProgress ? 'processing' : stableEmailState ? 'monitoring' : 'processing'
+
+      this.clearOverlayHideTimeout()
+      this.setOverlayVisible(true, state, scaledBoundsForOverlay, windowNameForOverlay)
     } catch (err) {
       logger.warn('ScreenCaptureManager: updateOverlayVisibility failed', err)
       this.setOverlayVisible(false)
+    } finally {
+      this.overlayUpdateInProgress = false
+    }
+  }
+
+  /**
+   * Get frontmost window bounds from AppleScript (screen coordinates). Used only for overlay positioning.
+   * No fallback to primaryDisplay.bounds — if this returns null, overlay is hidden.
+   */
+  private async getWindowBoundsFromAppleScript(): Promise<{ x: number; y: number; width: number; height: number } | null> {
+    try {
+      const raw = await this.overlayManager.getRawWindowBounds()
+      if (!raw || !raw.bounds || raw.bounds.width < 50 || raw.bounds.height < 50) {
+        return null
+      }
+      return raw.bounds
+    } catch {
+      return null
     }
   }
 
@@ -570,15 +734,54 @@ export class ScreenCaptureManager {
     const win = this.overlayWindow
     if (win && !win.isDestroyed() && !win.webContents.isDestroyed()) {
       win.webContents.send('overlay-state', state)
+      win.webContents.send('render-state', state)
     }
+  }
+
+  /**
+   * Debounced overlay state update: only send state to overlay if it persists for OVERLAY_STATE_DEBOUNCE_MS.
+   * Prevents flickering between Grey (processing) and Green (monitoring).
+   */
+  private updateOverlayState(newState: 'monitoring' | 'processing'): void {
+    if (newState === this.lastRenderedOverlayState) return
+    if (this.overlayStateDebounceTimer) {
+      clearTimeout(this.overlayStateDebounceTimer)
+      this.overlayStateDebounceTimer = null
+    }
+    if (this.lastRenderedOverlayState === 'NONE') {
+      this.lastRenderedOverlayState = newState
+      this.sendOverlayState(newState)
+      return
+    }
+    this.overlayStateDebounceTimer = setTimeout(() => {
+      this.overlayStateDebounceTimer = null
+      this.lastRenderedOverlayState = newState
+      this.sendOverlayState(newState)
+      logger.debug(`[Overlay] Transitioned to: ${newState}`)
+    }, OVERLAY_STATE_DEBOUNCE_MS)
+  }
+
+  private clearOverlayStateDebounce(): void {
+    if (this.overlayStateDebounceTimer) {
+      clearTimeout(this.overlayStateDebounceTimer)
+      this.overlayStateDebounceTimer = null
+    }
+    this.lastRenderedOverlayState = 'NONE'
   }
 
   private sendOverlayBounds(bounds: { x: number; y: number; width: number; height: number } | null): void {
     this.lastOverlayBounds = bounds
     const win = this.overlayWindow
     if (win && !win.isDestroyed() && !win.webContents.isDestroyed()) {
-      win.webContents.send('overlay-bounds', bounds)
+      const payload = this.normalizeBoundsForOverlay(bounds)
+      win.webContents.send('overlay-bounds', payload)
     }
+  }
+
+  /** Attach pixelRatio so overlay can scale logical (DIP) bounds to viewport if needed (Windows only; macOS is 1:1). */
+  private normalizeBoundsForOverlay(bounds: { x: number; y: number; width: number; height: number } | null): { x: number; y: number; width: number; height: number; pixelRatio: number } | null {
+    if (!bounds) return null
+    return { ...bounds, pixelRatio: 1 }
   }
 
   private sendOverlayWindowData(
@@ -589,7 +792,22 @@ export class ScreenCaptureManager {
   ): void {
     const win = this.overlayWindow
     if (win && !win.isDestroyed() && !win.webContents.isDestroyed()) {
-      win.webContents.send('overlay-window-data', { bounds, state, appName, windowTitle })
+      win.webContents.send('overlay-window-data', {
+        bounds: this.normalizeBoundsForOverlay(bounds),
+        state,
+        appName,
+        windowTitle,
+      })
+    }
+  }
+
+  /**
+   * Send a line to the overlay's debug log (last 3 actions). Used when DATA_RECORDED is received from the extension.
+   */
+  sendDebugLogEntry(line: string): void {
+    const win = this.overlayWindow
+    if (win && !win.isDestroyed() && !win.webContents.isDestroyed()) {
+      win.webContents.send('debug-log-entry', line)
     }
   }
 
@@ -603,6 +821,7 @@ export class ScreenCaptureManager {
     if (frontmostAppName) this.lastFrontmostAppName = frontmostAppName
     const windowTitle = this.detectionManager?.getActiveWindowInfo()?.title ?? ''
     if (!visible) {
+      this.clearOverlayStateDebounce()
       if (this.lastOverlayVisible) {
         this.lastOverlayVisible = false
         this.sendOverlayBounds(null)
@@ -612,9 +831,15 @@ export class ScreenCaptureManager {
       }
       return
     }
+    if (!frontmostBounds || frontmostBounds.width < 50 || frontmostBounds.height < 50) {
+      const win = this.overlayWindow
+      if (win && !win.isDestroyed()) win.hide()
+      return
+    }
     this.ensureOverlayWindow()
     const win = this.overlayWindow
     if (win && !win.isDestroyed()) {
+      win.setBounds(frontmostBounds)
       if (!this.lastOverlayVisible) {
         this.lastOverlayVisible = true
         if (typeof win.showInactive === 'function') {
@@ -626,35 +851,33 @@ export class ScreenCaptureManager {
           setTimeout(() => this.platform.restoreFrontmost(frontmostAppName), 50)
         }
       }
-      this.sendOverlayState(newState)
-      this.sendOverlayBounds(frontmostBounds ?? null)
-      this.sendOverlayWindowData(frontmostBounds ?? null, newState, this.lastFrontmostAppName, windowTitle)
+      this.updateOverlayState(newState)
+      const boundsForContent = { x: 0, y: 0, width: frontmostBounds.width, height: frontmostBounds.height }
+      this.sendOverlayBounds(boundsForContent)
+      this.sendOverlayWindowData(boundsForContent, newState, this.lastFrontmostAppName, windowTitle)
     } else if (!this.lastOverlayVisible) {
       this.lastOverlayVisible = true
     }
     this.lastOverlayState = newState
-    this.sendOverlayState(newState)
   }
 
   private ensureOverlayWindow(): void {
     if (this.overlayWindow && !this.overlayWindow.isDestroyed()) return
-    const primary = screen.getPrimaryDisplay()
-    const { x, y, width, height } = primary.bounds
     const preloadPath = this.resolveOverlayPreloadPath()
     const usePreload = !!preloadPath
     this.overlayWindow = new BrowserWindow({
-      x,
-      y,
-      width,
-      height,
-      frame: false,
+      width: 400,
+      height: 300,
+      x: 0,
+      y: 0,
       transparent: true,
-      backgroundColor: '#00000000',
+      frame: false,
       alwaysOnTop: true,
+      hasShadow: false,
+      enableLargerThanScreen: true,
       skipTaskbar: true,
       fullscreenable: false,
       resizable: false,
-      hasShadow: false,
       show: false,
       focusable: false,
       webPreferences: {
@@ -664,18 +887,22 @@ export class ScreenCaptureManager {
         backgroundThrottling: false,
       },
     })
-    this.overlayWindow.setIgnoreMouseEvents(true, { forward: true })
+    this.overlayWindow.setIgnoreMouseEvents(true)
     if (process.platform === 'darwin') {
       this.overlayWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
     }
     this.overlayWindow.setMenuBarVisibility(false)
     this.overlayWindow.webContents.once('did-finish-load', () => {
-      this.sendOverlayState(this.lastOverlayState)
+      const stateToSend = this.lastRenderedOverlayState !== 'NONE' ? this.lastRenderedOverlayState : this.lastOverlayState
+      this.sendOverlayState(stateToSend)
       if (this.lastOverlayBounds) this.sendOverlayBounds(this.lastOverlayBounds)
+      const windowTitle = this.detectionManager?.getActiveWindowInfo()?.title ?? ''
+      this.sendOverlayWindowData(this.lastOverlayBounds, this.lastOverlayState, this.lastFrontmostAppName, windowTitle)
       // Re-send after a short delay so the overlay page's IPC listeners are definitely registered (avoids race)
       setTimeout(() => {
-        this.sendOverlayState(this.lastOverlayState)
+        this.sendOverlayState(stateToSend)
         if (this.lastOverlayBounds) this.sendOverlayBounds(this.lastOverlayBounds)
+        this.sendOverlayWindowData(this.lastOverlayBounds, this.lastOverlayState, this.lastFrontmostAppName, windowTitle)
       }, 100)
       if (this.lastOverlayVisible) {
         const w = this.overlayWindow
@@ -703,11 +930,17 @@ export class ScreenCaptureManager {
 
   private destroyOverlayWindow(): void {
     if (this.overlayWindow && !this.overlayWindow.isDestroyed()) {
+      try {
+        this.overlayWindow.hide()
+      } catch {
+        // ignore
+      }
       this.overlayWindow.destroy()
     }
     this.overlayWindow = null
     this.lastOverlayVisible = false
     this.lastOverlayState = 'monitoring'
+    this.clearOverlayStateDebounce()
   }
 
   /** One-time probe to verify we can capture and read from the screen; sets permissionStatus. */
@@ -741,13 +974,22 @@ export class ScreenCaptureManager {
     const cached = this.detectionCache.get<{ isEmail: boolean }>(cacheKey)
     // When not on email app: skip if window unchanged or cache says not email. When on email: always poll for higher refresh.
     if (!tier1.isEmail) {
-      if (!this.priorityManager.shouldScan(windowInfo)) return
-      if (cached?.isEmail === false) return
+      if (!this.priorityManager.shouldScan(windowInfo)) {
+        this.updateOverlayVisibility()
+        return
+      }
+      if (cached?.isEmail === false) {
+        this.updateOverlayVisibility()
+        return
+      }
     }
     this.lastCacheKey = cacheKey
     this.ensureCaptureWindow()
     const win = this.captureWindow
-    if (!win || win.isDestroyed()) return
+    if (!win || win.isDestroyed()) {
+      this.updateOverlayVisibility()
+      return
+    }
     this.captureInProgress = true
     this.updateOverlayVisibility()
     win.webContents.send('capture-request')
@@ -768,25 +1010,16 @@ export class ScreenCaptureManager {
 
     try {
       const { context } = await this.getContextAndBounds()
-      const isFirefox =
-        context?.appId === 'firefox' || (context?.windowName ?? '').toLowerCase().includes('firefox')
-      const preprocessed = isFirefox
-        ? await preprocessForOCRFirefox(Buffer.from(buffer))
-        : await preprocessForOCR(Buffer.from(buffer))
+      const preprocessed = await preprocessForOCR(Buffer.from(buffer))
       const rawText = await this.ocr.recognize(preprocessed)
       const text = cleanOCRText(rawText || '')
       if (!text || text.length < 20) return
-      // #region agent log
-      try {
-        fs.appendFileSync(DEBUG_LOG_PATH, JSON.stringify({ sessionId: '2b6709', location: 'ScreenCaptureManager:handleCaptureResult', message: 'OCR result', data: { textLength: text.length, preview: text.slice(0, 80).replace(/\s+/g, ' ') }, timestamp: Date.now(), hypothesisId: 'O1' }) + '\n')
-      } catch (_) {}
-      // #endregion
 
       this.privacy.requireNoStorage(text)
 
       const ocrStart = text.slice(0, 800).toLowerCase()
       const ocrExtended = text.slice(0, 1200).toLowerCase()
-      const isBrowser = context.appId === 'chrome' || context.appId === 'safari' || context.appId === 'firefox'
+      const isBrowser = context.appId === 'chrome' || context.appId === 'safari'
 
       const inboxInOCR = ocrStart.includes('inbox') && (ocrStart.includes('mail') || ocrStart.includes('gmail'))
       const gmailInOCR = (ocrStart.includes('mail.google') || ocrStart.includes('gmail.com')) && isBrowser
@@ -829,13 +1062,8 @@ export class ScreenCaptureManager {
       }
       const linkForLog = link ?? (context.browserUrl && context.browserUrl.trim().length > 0 ? context.browserUrl.trim() : null)
 
-      if (isBrowser && link) this.detectionManager.setLastCaptureUrl(link)
-      else if (!isBrowser) this.detectionManager.setLastCaptureUrl(null)
-      if (context.browserUrl) this.debugState.url = context.browserUrl
-      else if (isBrowser && link) this.debugState.url = link
-
-      this.debugState.contentPreview = text.replace(/[\r\n]+/g, ' ').slice(0, 100)
-      this.debugState.hoverLink = linkForLog ?? ''
+      if (isBrowser && link) this.detectionManager?.setLastCaptureUrl(link)
+      else if (!isBrowser) this.detectionManager?.setLastCaptureUrl(null)
 
       if (!effectiveIsEmailClient || !effectiveAppId || !this.privacy.isMonitoringAllowed(effectiveAppId)) {
         if (this.lastCacheKey) {
@@ -844,6 +1072,16 @@ export class ScreenCaptureManager {
         return
       }
       const appId = effectiveAppId
+      // Page content debug only on URL-confirmed email tabs; extension is preferred, OCR as fallback
+      const isEmailTabByUrl = context.isEmailClientActive || this.isEmailUrl(context.browserUrl)
+      if (isEmailTabByUrl) {
+        writePageContentLog({
+          source: 'ocr',
+          url: context.browserUrl ?? undefined,
+          timestamp: Date.now(),
+          content: text,
+        })
+      }
       const sourceType = getContentSourceType(appId)
       const content = this.extractor.extractFromText(text, sourceType === 'email' ? 'email' : 'clipboard', appId)
       if (content.urls.length === 0 && (!content.snippet || content.snippet.length < 30)) return
@@ -873,6 +1111,7 @@ export class ScreenCaptureManager {
           link: firstBad?.url,
           appId,
           riskScore,
+          triggers: result.reasons?.length ? result.reasons : undefined,
         },
         settings.alertPreferences
       )
@@ -881,56 +1120,6 @@ export class ScreenCaptureManager {
       }
     } catch (err) {
       logger.warn('ScreenCaptureManager: analysis failed', err)
-    }
-  }
-
-  // ---------------------------------------------------------------------------
-  // Structured debug log: Application | Tab detected | Email or Not | URL | First 100 chars
-  // Written every 2s, skipped if exactly the same as previous line.
-  // ---------------------------------------------------------------------------
-  private startDebugLog(): void {
-    if (this.debugLogTimer) return
-    this.debugLogTimer = setInterval(() => this.writeDebugLog(), DEBUG_LOG_INTERVAL_MS)
-  }
-
-  private stopDebugLog(): void {
-    if (this.debugLogTimer) {
-      clearInterval(this.debugLogTimer)
-      this.debugLogTimer = null
-    }
-  }
-
-  private writeDebugLog(): void {
-    try {
-      const application = this.debugState.application || 'unknown'
-      const tabDetected = this.debugState.tabDetected || application
-      const emailOrNot = this.debugState.isEmail ? 'Email' : 'Not Email'
-      const url = this.debugState.url || 'N/A'
-      const content = (this.debugState.contentPreview || '').slice(0, 100) || 'N/A'
-      const overlayColor = this.lastOverlayVisible
-        ? (this.lastOverlayState === 'monitoring' ? 'green' : 'grey')
-        : 'none'
-      const boundsInfo = this.lastOverlayBounds
-        ? `${this.lastOverlayBounds.x},${this.lastOverlayBounds.y},${this.lastOverlayBounds.width}x${this.lastOverlayBounds.height}`
-        : 'none'
-
-      const data =
-        `Application: ${application} | ` +
-        `Tab: ${tabDetected} | ` +
-        `${emailOrNot} | ` +
-        `URL: ${url} | ` +
-        `Content: ${content} | ` +
-        `Overlay: ${overlayColor} | ` +
-        `Bounds: ${boundsInfo}`
-
-      if (data === this.lastDebugLogLine) return
-      this.lastDebugLogLine = data
-
-      const logPath = getDebugLogPath()
-      if (!logPath) return
-      fs.appendFileSync(logPath, `[${new Date().toISOString()}] ${data}\n`)
-    } catch {
-      // ignore log failures
     }
   }
 }

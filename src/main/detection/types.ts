@@ -6,7 +6,7 @@ import type { WindowBounds } from '../../shared/background-types'
 export interface WindowInfo {
   owner: { name: string }
   bounds: WindowBounds
-  /** Resolved app type: chrome, safari, firefox, outlook, gmail, generic, etc. */
+  /** Resolved app type: chrome, safari, outlook, gmail, generic, etc. */
   appType: string
   /** Current browser URL if available (from platform), no OCR. */
   browserUrl?: string | null

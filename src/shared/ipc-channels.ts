@@ -64,6 +64,15 @@ export const IPC_CHANNELS = {
   DETECTION_GET_SETTINGS: 'detection:getSettings',
   DETECTION_UPDATE_SETTINGS: 'detection:updateSettings',
 
+  // Phase 6: unified IPC (main -> renderer)
+  WINDOW_UPDATE: 'window:update',
+  EMAIL_DETECTED: 'email:detected',
+  SCAM_ALERT: 'scam:alert',
+
+  // Phase 6: renderer -> main
+  CAPTURE_START: 'capture:start',
+  ALERT_DISMISS: 'alert:dismiss',
+
   // Permissions (unified status + open system prefs)
   PERMISSIONS_GET_ALL: 'permissions:getAll',
   PERMISSIONS_OPEN_SYSTEM_PREFS: 'permissions:openSystemPrefs',

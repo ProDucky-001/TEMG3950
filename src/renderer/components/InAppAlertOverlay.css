@@ -60,10 +60,11 @@
 
 .in-app-alert-overlay__panel {
   padding: 20px;
-  background: var(--bg-secondary);
-  border: 1px solid var(--border);
-  border-left: 4px solid;
-  border-radius: var(--radius-lg);
+  background: #fff;
+  color: #000;
+  border: 1px solid #ccc;
+  border-left: 4px solid #333;
+  border-radius: var(--radius-lg, 8px);
   box-shadow: 0 12px 40px rgba(0, 0, 0, 0.4);
 }
 
@@ -101,7 +102,8 @@
 .in-app-alert-overlay__title {
   margin: 0;
   font-size: 18px;
-  font-weight: 600;
+  font-weight: 700;
+  color: #000;
   flex: 1 1 100%;
 }
 
@@ -109,45 +111,52 @@
   font-size: 12px;
   font-weight: 700;
   text-transform: uppercase;
+  color: #333;
 }
 
 .in-app-alert-overlay__close {
   background: none;
   border: none;
-  color: var(--text-secondary);
+  color: #555;
   font-size: 24px;
   line-height: 1;
   cursor: pointer;
   padding: 0 4px;
   margin-left: auto;
 }
-
 .in-app-alert-overlay__close:hover {
-  color: var(--text-primary);
-  background: var(--bg-tertiary);
-  border-radius: var(--radius);
+  color: #000;
+  background: #eee;
+  border-radius: 4px;
 }
-
 .in-app-alert-overlay__message {
   margin: 0 0 8px 0;
   font-size: 14px;
   line-height: 1.4;
+  color: #000;
 }
-
+.in-app-alert-overlay__triggers {
+  margin: 0 0 8px 0;
+  padding-left: 18px;
+  font-size: 13px;
+  color: #333;
+  line-height: 1.4;
+}
+.in-app-alert-overlay__triggers li {
+  margin-bottom: 2px;
+}
 .in-app-alert-overlay__score {
   margin: 0 0 8px 0;
   font-size: 13px;
-  color: var(--text-secondary);
+  color: #333;
 }
-
 .in-app-alert-overlay__score strong {
-  color: var(--text-primary);
+  color: #000;
 }
-
 .in-app-alert-overlay__link {
   margin: 0 0 16px 0;
   font-size: 12px;
-  color: var(--text-secondary);
+  color: #555;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -165,21 +174,18 @@
   font-size: 13px;
   border-radius: 6px;
   cursor: pointer;
-  border: 1px solid var(--border);
-  background: var(--bg-tertiary);
-  color: var(--text-primary);
+  border: 1px solid #999;
+  background: #f0f0f0;
+  color: #000;
 }
-
 .in-app-alert-overlay__btn--primary {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: white;
+  background: #333;
+  border-color: #333;
+  color: #fff;
 }
-
 .in-app-alert-overlay__btn:hover {
-  filter: brightness(1.1);
+  filter: brightness(0.95);
 }
-
 .in-app-alert-overlay__btn--secondary:hover {
-  background: var(--border);
+  background: #e0e0e0;
 }

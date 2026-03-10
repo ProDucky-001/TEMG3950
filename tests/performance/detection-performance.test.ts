@@ -85,7 +85,7 @@ describe('Detection performance', () => {
       const shouldScan = pm.shouldScan(windowInfo)
       const duration = performance.now() - start
       expect(priority).toBe('high')
-      expect(interval).toBe(300)
+      expect(interval).toBe(200)
       expect(hash).toContain('outlook')
       expect(shouldScan).toBe(true)
       expect(duration).toBeLessThan(5)

@@ -12,7 +12,6 @@ export type SupportedAppId =
   | 'slack'
   | 'safari'
   | 'chrome'
-  | 'firefox'
   | 'generic'
 
 export type ContentSourceType = 'email' | 'messaging' | 'browser' | 'clipboard'

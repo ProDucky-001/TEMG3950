@@ -7,28 +7,32 @@ const isDev = process.env.NODE_ENV === 'development' || !!process.env.ELECTRON_V
 /**
  * Transparent overlay window for green-corner UI when an email application is detected.
  * Single window over primary display; mouse events pass through.
+ *
+ * On macOS, BrowserWindow.setBounds() already works in DIP (logical points).
+ * AppleScript returns DIP coordinates. No scaling is needed.
+ * On Windows, screen.dipToScreenRect() converts DIP to physical if needed.
  */
 export class OverlayWindow {
   private window: BrowserWindow | null = null
 
   create(preloadPath?: string): BrowserWindow {
     if (this.window && !this.window.isDestroyed()) return this.window
-    const primary = screen.getPrimaryDisplay()
-    const { x, y, width, height } = primary.bounds
+    const primaryDisplay = screen.getPrimaryDisplay()
+    const { width, height } = primaryDisplay.size
     const usePreload = preloadPath && fs.existsSync(preloadPath)
     this.window = new BrowserWindow({
-      x,
-      y,
       width,
       height,
-      frame: false,
+      x: 0,
+      y: 0,
       transparent: true,
-      backgroundColor: '#00000000',
+      frame: false,
       alwaysOnTop: true,
+      hasShadow: false,
+      enableLargerThanScreen: true,
       skipTaskbar: true,
       fullscreenable: false,
       resizable: false,
-      hasShadow: false,
       show: false,
       focusable: false,
       webPreferences: {
@@ -38,7 +42,7 @@ export class OverlayWindow {
         backgroundThrottling: false,
       },
     })
-    this.window.setIgnoreMouseEvents(true, { forward: true })
+    this.window.setIgnoreMouseEvents(true)
     if (process.platform === 'darwin') {
       this.window.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
     }

@@ -37,43 +37,9 @@ export class OutlookDetector {
   }
 
   /**
-   * Infer Outlook context from window title and optional URL (inbox, email, compose, calendar, settings).
+   * Outlook context (simplified: no window title or URL parsing).
    */
-  getOutlookContext(windowName: string, url?: string | null): OutlookContext {
-    const combined = `${windowName ?? ''} ${url ?? ''}`.toLowerCase()
-
-    if (
-      combined.includes('compose') ||
-      combined.includes('new message') ||
-      combined.includes('reply') ||
-      combined.includes('forward') ||
-      combined.includes('write')
-    ) {
-      return { section: 'compose' }
-    }
-    if (
-      combined.includes('calendar') ||
-      combined.includes('/calendar')
-    ) {
-      return { section: 'calendar' }
-    }
-    if (
-      combined.includes('settings') ||
-      combined.includes('options') ||
-      combined.includes('/settings')
-    ) {
-      return { section: 'settings' }
-    }
-    if (
-      combined.includes('inbox') ||
-      combined.includes('mail') ||
-      combined.includes('messages')
-    ) {
-      return { section: 'inbox' }
-    }
-    if (combined.trim().length > 0) {
-      return { section: 'email' }
-    }
+  getOutlookContext(_windowName: string, _url?: string | null): OutlookContext {
     return { section: 'unknown' }
   }
 }

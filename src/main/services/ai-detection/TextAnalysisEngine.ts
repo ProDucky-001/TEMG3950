@@ -144,45 +144,9 @@ export class TextAnalysisEngine {
   }
 
   /**
-   * Detect potential factual issues: exaggerated claims, contradictions (simple heuristics).
+   * Factual claims analysis (no heuristics; returns empty).
    */
-  analyzeFactualClaims(text: string): { indicators: string[]; details: string[] } {
-    const indicators: string[] = []
-    const details: string[] = []
-    const lower = text.toLowerCase()
-
-    const impossiblePhrases = [
-      'guaranteed 100%',
-      '100% free',
-      'no risk',
-      'zero risk',
-      'act now or miss out',
-      'limited to the first',
-      'only today',
-      'once in a lifetime',
-      'secret that',
-      'banks don\'t want you to know',
-    ]
-    for (const p of impossiblePhrases) {
-      if (lower.includes(p)) {
-        indicators.push('Possible exaggerated or impossible claim')
-        details.push(`Phrase "${p}" often appears in scams or AI-generated pitches`)
-      }
-    }
-
-    const contradictionPairs: [string, string][] = [
-      ['urgent', 'take your time'],
-      ['immediately', 'whenever you can'],
-      ['free', 'small fee'],
-      ['guaranteed', 'no refunds'],
-    ]
-    for (const [a, b] of contradictionPairs) {
-      if (lower.includes(a) && lower.includes(b)) {
-        indicators.push('Potential contradiction in message')
-        details.push(`Both "${a}" and "${b}" appear in the same text`)
-      }
-    }
-
-    return { indicators, details }
+  analyzeFactualClaims(_text: string): { indicators: string[]; details: string[] } {
+    return { indicators: [], details: [] }
   }
 }

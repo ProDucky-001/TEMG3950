@@ -1,5 +1,5 @@
 import 'dotenv/config'
-import { app, ipcMain, systemPreferences, dialog, shell } from 'electron'
+import { app, BrowserWindow, ipcMain, systemPreferences, dialog, shell } from 'electron'
 import { TrayManager } from './managers/TrayManager'
 import { WindowManager } from './managers/WindowManager'
 import { WindowStateStore } from './managers/WindowStateStore'
@@ -24,6 +24,21 @@ import type { ContentSource } from '../shared/ai-detection-types'
 import { writeErrorToLog } from './services/ErrorLogWriter'
 import { PermissionManager } from './services/PermissionManager'
 import { logger } from './services/logger'
+import { writePageContentLog } from './services/pageContentDebugLog'
+import { isEmailUrl } from './detection/EmailPatterns'
+import fs from 'fs'
+import path from 'path'
+import http from 'http'
+
+// Mitigate macOS Electron/Chromium cosmetic errors during shutdown:
+// task_policy_set, bootstrap_look_up, rendezvous
+app.commandLine.appendSwitch('disable-task-permission-policy')
+app.commandLine.appendSwitch('no-sandbox')
+app.commandLine.appendSwitch('disable-gpu-sandbox')
+app.commandLine.appendSwitch('disable-background-timer-throttling')
+if (process.platform === 'darwin') {
+  app.commandLine.appendSwitch('disable-renderer-backgrounding')
+}
 
 // Disable GPU acceleration for compatibility
 app.disableHardwareAcceleration()
@@ -164,9 +179,6 @@ async function initInternal() {
   } catch (err) {
     logger.warn('Startup accessibility check failed:', err)
   }
-  // #region agent log
-  fetch('http://127.0.0.1:7799/ingest/2f9d4b64-93fa-4b9d-8d61-3e63f5789b0d',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'2b6709'},body:JSON.stringify({sessionId:'2b6709',location:'index.ts:init',message:'accessibility after ensure',data:{accessibilityGranted,platform:process.platform},timestamp:Date.now(),hypothesisId:'H1'})}).catch(()=>{});
-  // #endregion
   if (!accessibilityGranted) {
     logger.warn('Accessibility permission not granted — active window detection will be limited')
   } else {
@@ -190,6 +202,7 @@ async function initInternal() {
         const send = () => {
           try {
             win.webContents.send('scamshield:alert-pushed', alert)
+            win.webContents.send(IPC_CHANNELS.SCAM_ALERT, alert)
           } catch {
             // window may be destroyed
           }
@@ -200,7 +213,6 @@ async function initInternal() {
           send()
         }
       }
-      // Do not focus the dashboard — user stays in their current app; they can click the notification to open it
     },
   })
   const scamDb = new ScamDatabase(Store)
@@ -255,11 +267,17 @@ async function initInternal() {
   trayManager.create()
   await monitoringManager.start()
   appMonitorManager.startMonitoring()
-  // #region agent log
-  fetch('http://127.0.0.1:7799/ingest/2f9d4b64-93fa-4b9d-8d61-3e63f5789b0d',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'2b6709'},body:JSON.stringify({sessionId:'2b6709',location:'index.ts:before detectionManager.start',message:'trusted right before monitor start',data:{trusted:process.platform==='darwin'?systemPreferences.isTrustedAccessibilityClient(false):null},timestamp:Date.now(),hypothesisId:'H2'})}).catch(()=>{});
-  // #endregion
   detectionManager.start()
   screenCaptureManager.start()
+
+  // Local server for extension to send DATA_RECORDED (so overlay debug log can show it)
+  startDataRecordedServer()
+
+  // In development, open the dashboard so something visible appears (tray-only is easy to miss)
+  const isDev = process.env.NODE_ENV === 'development' || !!process.env.ELECTRON_VITE_DEV_SERVER_URL
+  if (isDev) {
+    windowManager.openDashboard()
+  }
 
   if (process.platform === 'darwin') {
     setTimeout(() => {
@@ -267,8 +285,10 @@ async function initInternal() {
     }, 3500)
   }
 
+  // Mark as quitting when app is about to quit (tray Quit or app.quit()); close handler then allows real close
   app.on('before-quit', () => {
     windowManager.setQuitting(true)
+    // Stop overlay and capture first so overlay is hidden/destroyed before other teardown
     screenCaptureManager.stop()
     detectionManager.stop()
     appMonitorManager.stopMonitoring()
@@ -276,10 +296,136 @@ async function initInternal() {
     windowManager.closeAll()
   })
 
-  app.on('will-quit', () => {
-    process.exit(0)
+  // will-quit: close HTTP server; avoid forcing process.exit to prevent task_policy_set errors
+  app.on('will-quit', (e) => {
+    if (dataRecordedServer) {
+      dataRecordedServer.close()
+      dataRecordedServer = null
+    }
   })
+
+  // Handle Ctrl+C (SIGINT) and kill (SIGTERM). Let app.quit() run so Electron tears down
+  // child processes cleanly; avoid process.exit() to prevent "bootstrap_look_up Unknown service name" / "parent died?" on macOS.
+  let shutdownHandled = false
+  const handleSIGINT = () => {
+    if (shutdownHandled) return
+    shutdownHandled = true
+    logger.info('[ScamShield] Received SIGINT, shutting down...')
+    windowManager.setQuitting(true)
+    screenCaptureManager.stop()
+    detectionManager.stop()
+    appMonitorManager.stopMonitoring()
+    monitoringManager.stop()
+    windowManager.closeAll()
+    app.quit()
+  }
+  const handleSIGTERM = () => {
+    if (shutdownHandled) return
+    shutdownHandled = true
+    logger.info('[ScamShield] Received SIGTERM, shutting down...')
+    windowManager.setQuitting(true)
+    screenCaptureManager.stop()
+    detectionManager.stop()
+    appMonitorManager.stopMonitoring()
+    monitoringManager.stop()
+    windowManager.closeAll()
+    app.quit()
+  }
+  process.on('SIGINT', handleSIGINT)
+  process.on('SIGTERM', handleSIGTERM)
 }
+
+const DATA_RECORDED_PORT = 8765
+let dataRecordedServer: http.Server | null = null
+
+function handleDataRecorded(payload: { url?: string; length?: number; timestamp?: number; content?: string }): void {
+  const line = `DATA_RECORDED url=${payload.url ?? ''} length=${payload.length ?? 0} ts=${payload.timestamp ?? 0}\n`
+  try {
+    const userData = app.getPath('userData')
+    const logPath = path.join(userData, 'logs.txt')
+    fs.appendFileSync(logPath, line)
+  } catch (err) {
+    logger.warn('Failed to append to logs.txt', err)
+  }
+  const debugLine = `DATA_RECORDED: ${(payload.url ?? '').substring(0, 50)} (${payload.length ?? 0} chars)`
+  screenCaptureManager.sendDebugLogEntry(debugLine)
+  if (payload.url != null && payload.url.trim() !== '') {
+    screenCaptureManager.setExtensionTabState(payload.url, true)
+  }
+  // Only log page content on email tabs; extension is the primary source (more accurate than OCR)
+  if (
+    payload.content != null &&
+    payload.content.trim() !== '' &&
+    payload.url != null &&
+    payload.url.trim() !== '' &&
+    isEmailUrl(payload.url)
+  ) {
+    writePageContentLog({
+      source: 'extension',
+      url: payload.url ?? undefined,
+      timestamp: payload.timestamp ?? Date.now(),
+      content: payload.content,
+    })
+  }
+}
+
+function startDataRecordedServer(): void {
+  if (dataRecordedServer) return
+  dataRecordedServer = http.createServer((req, res) => {
+    if (req.method === 'POST' && req.url === '/data-recorded') {
+      let body = ''
+      req.on('data', (chunk) => { body += chunk })
+      req.on('end', () => {
+        try {
+          const payload = JSON.parse(body) as { url?: string; length?: number; timestamp?: number; content?: string }
+          handleDataRecorded(payload)
+          res.writeHead(200, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ ok: true }))
+        } catch {
+          res.writeHead(400)
+          res.end()
+        }
+      })
+    } else if (req.method === 'POST' && req.url === '/tab-state') {
+      let body = ''
+      req.on('data', (chunk) => { body += chunk })
+      req.on('end', () => {
+        try {
+          const payload = JSON.parse(body) as { url?: string; isEmail?: boolean }
+          screenCaptureManager.setExtensionTabState(payload.url ?? null, payload.isEmail === true)
+          res.writeHead(200, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ ok: true }))
+        } catch {
+          res.writeHead(400)
+          res.end()
+        }
+      })
+    } else {
+      res.writeHead(404)
+      res.end()
+    }
+  })
+  dataRecordedServer.on('error', (err: NodeJS.ErrnoException) => {
+    if (err.code === 'EADDRINUSE') {
+      logger.warn(
+        'DATA_RECORDED server: port 8765 already in use. Quit any other ScamShield instance, or run: lsof -i :8765'
+      )
+      if (dataRecordedServer) {
+        dataRecordedServer.close()
+        dataRecordedServer = null
+      }
+    } else {
+      logger.warn('DATA_RECORDED server error', err.message)
+    }
+  })
+  dataRecordedServer.listen(
+    { port: DATA_RECORDED_PORT, host: '127.0.0.1', reuseAddress: true },
+    () => {
+      logger.debug('[ScamShield] DATA_RECORDED server listening on 127.0.0.1:' + DATA_RECORDED_PORT)
+    }
+  )
+}
+
 function setupIpcHandlers(startupManager: StartupManager, feedbackManager: FeedbackManager): void {
   // Settings
   ipcMain.handle(IPC_CHANNELS.SETTINGS_GET, () => settingsManager.getSettings())
@@ -310,6 +456,14 @@ function setupIpcHandlers(startupManager: StartupManager, feedbackManager: Feedb
       monitoringManager.stop()
       appMonitorManager.stopMonitoring()
     }
+    try {
+      const win = windowManager.getDashboardWindow()
+      if (win && !win.isDestroyed() && !win.webContents.isDestroyed()) {
+        win.webContents.send(IPC_CHANNELS.STATUS_UPDATE, { enabled })
+      }
+    } catch (err) {
+      logger.debug('IPC: failed to send status update', err)
+    }
     return enabled
   })
   ipcMain.handle(IPC_CHANNELS.MONITORING_STATUS, () =>
@@ -318,7 +472,7 @@ function setupIpcHandlers(startupManager: StartupManager, feedbackManager: Feedb
 
   ipcMain.handle(IPC_CHANNELS.LINK_SCAN, (_e, url: string) => {
     if (typeof url !== 'string') return Promise.reject(new Error('Invalid URL'))
-    return linkScanner.scan(url).then((result) => {
+    return linkScanner.scan(url, { debugContext: { isEmail: false, source: 'manual' } }).then((result) => {
       monitoringManager.recordScan(result.riskScore)
       return result
     })
@@ -371,6 +525,26 @@ function setupIpcHandlers(startupManager: StartupManager, feedbackManager: Feedb
     screenCaptureManager.getPermissionInstructions()
   )
 
+  // Phase 6: capture:start (renderer requests immediate capture)
+  ipcMain.handle(IPC_CHANNELS.CAPTURE_START, () => {
+    try {
+      return screenCaptureManager.requestCaptureOnce()
+    } catch (err) {
+      logger.debug('IPC: capture:start failed', err)
+      return false
+    }
+  })
+
+  // DATA_RECORDED: from extension (or renderer); append to logs.txt and update overlay debug log
+  ipcMain.handle('data-recorded', (_e, payload: { url?: string; length?: number; timestamp?: number }) => {
+    handleDataRecorded(payload ?? {})
+  })
+
+  // Phase 6: alert:dismiss
+  ipcMain.on(IPC_CHANNELS.ALERT_DISMISS, (_e, _payload?: unknown) => {
+    // Optional: log or update state when user dismisses in-app alert
+  })
+
   // Detection (active window + email state)
   ipcMain.handle(IPC_CHANNELS.DETECTION_GET_STATE, () => detectionManager.getState())
   ipcMain.handle(IPC_CHANNELS.DETECTION_GET_SETTINGS, () => detectionManager.getDetectionSettings())
@@ -393,8 +567,12 @@ function setupIpcHandlers(startupManager: StartupManager, feedbackManager: Feedb
           lastChecked: state.lastChecked instanceof Date ? state.lastChecked.toISOString() : state.lastChecked,
         }
         win.webContents.send(IPC_CHANNELS.DETECTION_STATE_CHANGED, payload)
-      } catch {
-        // ignore
+        win.webContents.send(IPC_CHANNELS.WINDOW_UPDATE, payload)
+        if (state.status === 'detected') {
+          win.webContents.send(IPC_CHANNELS.EMAIL_DETECTED, payload)
+        }
+      } catch (err) {
+        logger.debug('IPC: failed to send detection state', err)
       }
     }
   })
@@ -445,9 +623,27 @@ app.whenReady().then(init).catch((err) => {
 })
 
 app.on('window-all-closed', () => {
-  // Tray app: keep running when all windows are closed on all platforms
+  // On macOS, keep the app running in the background (tray/dock)
+  if (process.platform !== 'darwin') {
+    app.quit()
+  }
   if (process.platform === 'darwin') {
     app.dock?.hide?.()
   }
-  // Do not call app.quit(); tray keeps the app alive for background monitoring
+})
+
+app.on('activate', () => {
+  // On macOS, re-create or show window when dock icon is clicked
+  if (process.platform !== 'darwin') return
+  if (BrowserWindow.getAllWindows().length === 0) {
+    windowManager.openDashboard()
+  } else {
+    const existing = windowManager.getDashboardWindow()
+    if (existing && !existing.isDestroyed()) {
+      existing.show()
+      existing.focus()
+    } else {
+      windowManager.openDashboard()
+    }
+  }
 })

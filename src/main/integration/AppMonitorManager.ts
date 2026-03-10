@@ -210,7 +210,7 @@ export class AppMonitorManager {
     if (this.suspended) return
     if (!this.privacy.isGlobalMonitoringEnabled()) return
     const appId = this.lastActiveAppId
-    if (appId !== 'chrome' && appId !== 'safari' && appId !== 'firefox') return
+    if (appId !== 'chrome' && appId !== 'safari') return
     if (!this.privacy.isMonitoringAllowed(appId)) return
 
     try {
@@ -218,7 +218,9 @@ export class AppMonitorManager {
       if (!url || url === this.lastBrowserUrl) return
       this.lastBrowserUrl = url
 
-      const result = await this.linkScanner.scan(url)
+      const result = await this.linkScanner.scan(url, {
+        debugContext: { isEmail: false, source: 'browser' },
+      })
       this.onLinkScanned?.(result.riskScore)
 
       if (result.riskScore >= 50) {

@@ -4,7 +4,7 @@ import type { Alert } from '../../shared/types'
 import { SEVERITY_COLORS, SEVERITY_LABELS } from '../../shared/alert-types'
 import './InAppAlertOverlay.css'
 
-const TOAST_DURATION_MS = 8000
+const TOAST_DURATION_MS = 30000
 const CRITICAL_POPUP_NO_AUTO_DISMISS = true // high/critical stay until user dismisses
 
 export default function InAppAlertOverlay() {
@@ -37,6 +37,7 @@ export default function InAppAlertOverlay() {
   function handleIgnore() {
     setVisible(false)
     setAlert(null)
+    window.scamshield?.dismissAlert?.()
   }
 
   function handleGetDetails() {
@@ -70,7 +71,7 @@ export default function InAppAlertOverlay() {
       >
         <div className="in-app-alert-overlay__header">
           <h2 id="in-app-alert-title" className="in-app-alert-overlay__title">
-            Suspicious content detected
+            Potential Risk Detected
           </h2>
           <span
             className="in-app-alert-overlay__severity"
@@ -88,6 +89,13 @@ export default function InAppAlertOverlay() {
           </button>
         </div>
         <p className="in-app-alert-overlay__message">{alert.message}</p>
+        {alert.triggers && alert.triggers.length > 0 && (
+          <ul className="in-app-alert-overlay__triggers" aria-label="Matched patterns">
+            {alert.triggers.slice(0, 6).map((t, i) => (
+              <li key={i}>{t}</li>
+            ))}
+          </ul>
+        )}
         {alert.riskScore != null && (
           <p className="in-app-alert-overlay__score">
             Threat score: <strong>{alert.riskScore}/100</strong>
@@ -101,10 +109,10 @@ export default function InAppAlertOverlay() {
         <div className="in-app-alert-overlay__actions">
           <button
             type="button"
-            className="in-app-alert-overlay__btn in-app-alert-overlay__btn--secondary"
+            className="in-app-alert-overlay__btn in-app-alert-overlay__btn--primary"
             onClick={handleIgnore}
           >
-            Ignore
+            Dismiss
           </button>
           <button
             type="button"

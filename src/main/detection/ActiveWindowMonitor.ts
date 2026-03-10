@@ -1,21 +1,23 @@
 import type { ActiveWindowInfo } from './ActiveWindowInfo'
 import { isEmailApplication } from './EmailPatterns'
+import { normalizeAppName } from '../utils/appNameNormalizer'
 import { execFile as execFileCb } from 'node:child_process'
 import { promisify } from 'node:util'
-import { createRequire } from 'node:module'
-import { dirname, join } from 'node:path'
+import { logger } from '../services/logger'
+import type { PlatformSpecificManager } from '../integration/PlatformSpecificManager'
+import { screen } from 'electron'
 
 const execFileAsync = promisify(execFileCb)
-const DEBOUNCE_MS = 80
-const DEFAULT_POLLING_INTERVAL_MS = 100
+const DETECTION_INTERVAL_MS = 2000
+const DEBOUNCE_MS = 0
 
 /**
- * Continuously tracks the active window using the active-win package.
- * Polls every 100ms for responsive overlay tracking.
- * Debounce is kept short (80ms) so focus changes are relayed within ~200ms.
+ * Tracks the active window. On macOS uses only AppleScript (no active-win).
+ * When a PlatformSpecificManager is provided, uses its AppleScript-based
+ * getFrontmostWindowBounds() so overlay and downstream processing get real window bounds.
  */
 export class ActiveWindowMonitor {
-  private pollingIntervalMs = DEFAULT_POLLING_INTERVAL_MS
+  private pollingIntervalMs = DETECTION_INTERVAL_MS
   private isRunning = false
   private lastWindowInfo: ActiveWindowInfo | null = null
   private listeners = new Set<(info: ActiveWindowInfo | null) => void>()
@@ -23,10 +25,11 @@ export class ActiveWindowMonitor {
   private debounceTimer: ReturnType<typeof setTimeout> | null = null
   private pendingInfo: ActiveWindowInfo | null = null
   private activeWinModule: { activeWindow: (options?: Record<string, unknown>) => Promise<any> } | null = null
-  private macosBinaryPath: string | null = null
+
+  constructor(private readonly platform?: PlatformSpecificManager) {}
 
   /**
-   * Start monitoring the active window. Uses active-win (dynamic import for ESM).
+   * Start monitoring the active window. On macOS uses AppleScript only; on Windows uses active-win.
    */
   start(): void {
     if (this.isRunning) return
@@ -60,15 +63,19 @@ export class ActiveWindowMonitor {
   }
 
   /**
-   * Whether the macOS binary has ever returned null or thrown since start (used to show accessibility dialog).
+   * Whether we have ever successfully obtained window info (AppleScript on macOS, active-win elsewhere).
+   */
+  isAvailable(): boolean {
+    return this._hasEverSucceeded
+  }
+
+  /**
+   * On macOS (AppleScript-only): true if we ever got null from AppleScript (e.g. no Accessibility).
    */
   hasEverSeenBinaryFailure(): boolean {
     return this._hasEverSeenBinaryFailure
   }
 
-  /**
-   * Set a one-shot callback when the macOS binary first returns null or throws. Used to show accessibility dialog.
-   */
   setOnBinaryFailure(callback: () => void): void {
     this.onBinaryFailureCallback = callback
   }
@@ -82,10 +89,10 @@ export class ActiveWindowMonitor {
   }
 
   /**
-   * Set polling interval in milliseconds (minimum 50ms).
+   * Set polling interval in milliseconds (minimum DETECTION_INTERVAL_MS).
    */
   setPollingInterval(ms: number): void {
-    this.pollingIntervalMs = Math.max(50, ms)
+    this.pollingIntervalMs = Math.max(DETECTION_INTERVAL_MS, ms)
     if (this.isRunning && this.pollTimer) {
       clearInterval(this.pollTimer)
       this.pollTimer = setInterval(() => this.tick(), this.pollingIntervalMs)
@@ -149,56 +156,69 @@ export class ActiveWindowMonitor {
     }, DEBOUNCE_MS)
   }
 
-  private async getActiveWindowInfoMacOS(): Promise<any> {
-    if (!this.macosBinaryPath) {
-      const req = createRequire(__filename)
-      const pkgMain = req.resolve('active-win')
-      this.macosBinaryPath = join(dirname(pkgMain), 'main')
-      console.log('[ActiveWindowMonitor] using macOS binary at:', this.macosBinaryPath)
-    }
-    const { stdout } = await execFileAsync(this.macosBinaryPath, ['--no-screen-recording-permission'])
-    const parsed = JSON.parse(stdout)
-    if (!parsed && !this._loggedMacosResultOnce) {
-      this._loggedMacosResultOnce = true
-      // #region agent log
-      fetch('http://127.0.0.1:7799/ingest/2f9d4b64-93fa-4b9d-8d61-3e63f5789b0d',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'2b6709'},body:JSON.stringify({sessionId:'2b6709',location:'ActiveWindowMonitor:getActiveWindowInfoMacOS',message:'binary returned falsy',data:{stdoutLength:stdout.length,stdoutPreview:stdout.slice(0,200),parsedType:typeof parsed},timestamp:Date.now(),hypothesisId:'H3'})}).catch(()=>{});
-      // #endregion
-    }
-    if (parsed) {
-      this._loggedMacosResultOnce = false
-      return parsed
-    }
-    this._hasEverSeenBinaryFailure = true
-    if (this.onBinaryFailureCallback && !this._binaryFailureNotified) {
-      this._binaryFailureNotified = true
-      this.onBinaryFailureCallback()
-    }
-    const fallback = await this.getFrontmostAppAppleScriptFallback()
-    if (fallback) {
-      // #region agent log
-      fetch('http://127.0.0.1:7799/ingest/2f9d4b64-93fa-4b9d-8d61-3e63f5789b0d',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'2b6709'},body:JSON.stringify({sessionId:'2b6709',location:'ActiveWindowMonitor:getActiveWindowInfoMacOS',message:'used AppleScript fallback',data:{appName:fallback.owner.name},timestamp:Date.now(),hypothesisId:'H6'})}).catch(()=>{});
-      // #endregion
-      return fallback
-    }
-    return null
+  private async getActiveWindowInfoMacOS(): Promise<ActiveWindowInfo | null> {
+    return this.getFrontmostAppAppleScriptFallback()
   }
 
-  /** When active-win binary returns null (no Accessibility), try AppleScript to get frontmost app name so detection still works. */
+  /** Get frontmost app and optional window title on macOS using only AppleScript (no active-win).
+   * When platform is provided, also fetches real window bounds via platform.getFrontmostWindowBounds()
+   * (AppleScript AXFrame/position+size) for overlay and further processing.
+   */
   private async getFrontmostAppAppleScriptFallback(): Promise<ActiveWindowInfo | null> {
     try {
       const { stdout } = await execFileAsync('osascript', [
         '-e',
         'tell application "System Events" to get name of first process whose frontmost is true',
       ], { encoding: 'utf8' })
-      const name = (stdout ?? '').trim()
-      if (!name) return null
+      const processName = (stdout ?? '').trim()
+      if (!processName) {
+        this._hasEverSeenBinaryFailure = true
+        if (this.onBinaryFailureCallback && !this._binaryFailureNotified) {
+          this._binaryFailureNotified = true
+          this.onBinaryFailureCallback()
+        }
+        return null
+      }
+      let title = ''
+      try {
+        const { stdout: titleOut } = await execFileAsync('osascript', [
+          '-e',
+          `tell application "System Events"
+            set p to first process whose frontmost is true
+            try
+              return name of window 1 of p
+            end try
+            return ""
+          end tell`,
+        ], { encoding: 'utf8' })
+        title = (titleOut ?? '').trim()
+      } catch {
+        // ignore
+      }
+      let bounds: { x: number; y: number; width: number; height: number } = { x: 0, y: 0, width: 800, height: 600 }
+      if (this.platform && process.platform === 'darwin') {
+        try {
+          const primary = screen.getPrimaryDisplay()
+          const raw = await this.platform.getFrontmostWindowBounds(primary.bounds.height)
+          if (raw && raw.width >= 50 && raw.height >= 50) bounds = raw
+        } catch {
+          // keep placeholder bounds
+        }
+      }
+      this._hasEverSucceeded = true
+      const name = normalizeAppName(processName, undefined)
       return {
-        title: '',
+        title,
         owner: { name, processId: 0 },
-        bounds: { x: 0, y: 0, width: 800, height: 600 },
+        bounds,
         platform: 'darwin',
       }
     } catch {
+      this._hasEverSeenBinaryFailure = true
+      if (this.onBinaryFailureCallback && !this._binaryFailureNotified) {
+        this._binaryFailureNotified = true
+        this.onBinaryFailureCallback()
+      }
       return null
     }
   }
@@ -211,7 +231,6 @@ export class ActiveWindowMonitor {
       } else {
         if (!this.activeWinModule) {
           this.activeWinModule = await import('active-win')
-          console.log('[ActiveWindowMonitor] active-win module loaded successfully')
         }
         result = await this.activeWinModule.activeWindow({
           accessibilityPermission: true,
@@ -226,57 +245,53 @@ export class ActiveWindowMonitor {
             this.onBinaryFailureCallback()
           }
         }
-        if (!this._loggedNullOnce) {
-          console.warn('[ActiveWindowMonitor] active-win returned null — check Accessibility permission')
-          this._loggedNullOnce = true
-        }
         return null
       }
-      this._loggedNullOnce = false
       this._loggedErrorOnce = false
-      const url = 'url' in result ? result.url : undefined
-      const info = {
-        title: result.title ?? '',
+      this._hasEverSucceeded = true
+      if (process.platform === 'darwin') {
+        return result as ActiveWindowInfo
+      }
+      const url = result && 'url' in result ? result.url : undefined
+      const rawOwner = result?.owner
+      const rawBounds = result?.bounds
+      const ownerName = normalizeAppName(rawOwner?.name, rawOwner && 'bundleId' in rawOwner ? rawOwner.bundleId : undefined)
+      const info: ActiveWindowInfo = {
+        title: (result?.title ?? '').trim(),
         url,
         owner: {
-          name: result.owner.name ?? '',
-          processId: result.owner.processId,
-          path: result.owner.path,
-          bundleId: 'bundleId' in result.owner ? result.owner.bundleId : undefined,
+          name: ownerName,
+          processId: rawOwner?.processId ?? 0,
+          path: rawOwner?.path,
+          bundleId: rawOwner && 'bundleId' in rawOwner ? rawOwner.bundleId : undefined,
         },
-        bounds: { ...result.bounds },
-        platform: result.platform ?? process.platform,
+        bounds: {
+          x: typeof rawBounds?.x === 'number' ? rawBounds.x : 0,
+          y: typeof rawBounds?.y === 'number' ? rawBounds.y : 0,
+          width: typeof rawBounds?.width === 'number' ? rawBounds.width : 800,
+          height: typeof rawBounds?.height === 'number' ? rawBounds.height : 600,
+        },
+        platform: (result?.platform ?? process.platform) as ActiveWindowInfo['platform'],
       }
       return info
     } catch (err) {
-      if (process.platform === 'darwin') {
+      if (process.platform !== 'darwin') {
         this._hasEverSeenBinaryFailure = true
         if (this.onBinaryFailureCallback && !this._binaryFailureNotified) {
           this._binaryFailureNotified = true
           this.onBinaryFailureCallback()
         }
-        const fallback = await this.getFrontmostAppAppleScriptFallback()
-        if (fallback) {
-          // #region agent log
-          fetch('http://127.0.0.1:7799/ingest/2f9d4b64-93fa-4b9d-8d61-3e63f5789b0d',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'2b6709'},body:JSON.stringify({sessionId:'2b6709',location:'ActiveWindowMonitor:getActiveWindowInfo',message:'used AppleScript fallback after catch',data:{appName:fallback.owner.name},timestamp:Date.now(),hypothesisId:'H6'})}).catch(()=>{});
-          // #endregion
-          return fallback
-        }
       }
       if (!this._loggedErrorOnce) {
         this._loggedErrorOnce = true
-        // #region agent log
-        fetch('http://127.0.0.1:7799/ingest/2f9d4b64-93fa-4b9d-8d61-3e63f5789b0d',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'2b6709'},body:JSON.stringify({sessionId:'2b6709',location:'ActiveWindowMonitor:getActiveWindowInfo',message:'catch',data:{err:String(err),code:(err as NodeJS.ErrnoException)?.code},timestamp:Date.now(),hypothesisId:'H4'})}).catch(()=>{});
-        // #endregion
-        console.error('[ActiveWindowMonitor] active-win error:', err)
+        logger.error('ActiveWindowMonitor: getActiveWindowInfo failed', err)
       }
       return null
     }
   }
-  private _loggedNullOnce = false
   private _loggedErrorOnce = false
-  private _loggedMacosResultOnce = false
   private _hasEverSeenBinaryFailure = false
+  private _hasEverSucceeded = false
   private onBinaryFailureCallback: (() => void) | null = null
   private _binaryFailureNotified = false
 }

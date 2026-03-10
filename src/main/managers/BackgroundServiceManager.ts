@@ -52,12 +52,7 @@ export class BackgroundServiceManager {
       this.updateChecker.start()
     }
 
-    app.on('window-all-closed', () => {
-      if (process.platform !== 'darwin') {
-        return
-      }
-    })
-
+    // window-all-closed and activate are handled in index.ts for macOS tray lifecycle
     app.on('before-quit', () => {
       this.systemEvents.stop()
       this.resourceManager.stop()

@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>ScamShield</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="popup">
+    <h1>ScamShield</h1>
+    <p id="status">Protection active. Links are extracted on each page load.</p>
+    <p id="logCount">0 log entries</p>
+    <div class="actions">
+      <button id="toggleLogs">Show Debug Logs</button>
+      <div id="logViewer" class="log-viewer"></div>
+      <button id="clearLogs">Clear Logs</button>
+    </div>
+    <div class="content-section">
+      <button id="toggleContent">Show last page content</button>
+      <div id="contentViewer" class="content-viewer"></div>
+    </div>
+  </div>
+  <script src="popup.js"></script>
+</body>
+</html>

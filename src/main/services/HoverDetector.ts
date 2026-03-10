@@ -26,9 +26,13 @@ function normalizeToUrl(text: string): string | null {
   return null
 }
 
+function isHttpUrl(url: string | null): boolean {
+  return url != null && /^https?:\/\//i.test(url.trim())
+}
+
 /**
- * On macOS, try to get the URL of the focused link (AXFocusedUIElement -> AXURL).
- * Works in some browsers (e.g. Safari/Chrome) when a link has focus; not guaranteed for Firefox.
+ * On macOS, get the URL of the focused link (AXFocusedUIElement -> AXURL).
+ * Uses frontmost app via System Events. Returns only http(s) URLs.
  */
 async function getFocusedLinkUrlMacOS(): Promise<string | null> {
   if (process.platform !== 'darwin') return null
@@ -51,8 +55,8 @@ async function getFocusedLinkUrlMacOS(): Promise<string | null> {
       end tell
     ' 2>/dev/null`
     const { stdout } = await execAsync(script, { timeout: 300 })
-    const url = (stdout ?? '').trim()
-    return normalizeToUrl(url) ?? null
+    const url = normalizeToUrl((stdout ?? '').trim())
+    return isHttpUrl(url) ? url : null
   } catch {
     return null
   }
@@ -111,7 +115,8 @@ export class HoverDetector {
   private async tick(): Promise<void> {
     const now = Date.now()
     const rawClip = clipboard.readText()
-    const clipboardContent = looksLikeUrl(rawClip) ? normalizeToUrl(rawClip) : null
+    const clipUrl = looksLikeUrl(rawClip) ? normalizeToUrl(rawClip) : null
+    const clipboardContent = isHttpUrl(clipUrl) ? clipUrl : null
 
     let hoveredUrl: string | null = null
     if (now - this.lastHoverQueryTime >= HOVER_QUERY_INTERVAL_MS) {

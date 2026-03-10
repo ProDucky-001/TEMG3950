@@ -3,13 +3,11 @@ import { getAppIdFromProcessName } from './appMapping'
 import { OUTLOOK_WEB_DOMAINS } from '../detection/EmailPatterns'
 import type { SupportedAppId } from '../../shared/integration-types'
 
-/** Gmail URL patterns (browser). */
+/** Only mail.google.com is recognised as Gmail. */
 const GMAIL_URL_PATTERNS = [
   /^https?:\/\/(www\.)?mail\.google\.com(\/|$)/,
   /^https?:\/\/(www\.)?mail\.google\.com\/mail/,
   /^https?:\/\/(www\.)?mail\.google\.com\/u\/\d+/,
-  /^https?:\/\/(accounts\.)?google\.com\/.*mail/,
-  /^https?:\/\/(www\.)?google\.com\/mail/,
 ]
 
 /** Returns true if url is an Outlook web URL (uses EmailPatterns.OUTLOOK_WEB_DOMAINS). */
@@ -20,10 +18,6 @@ function isOutlookWebUrl(url: string | null | undefined): boolean {
   const withScheme = /^https?:\/\//i.test(normalized) ? normalized : 'https://' + normalized
   return OUTLOOK_WEB_DOMAINS.some((domain) => withScheme.includes(domain))
 }
-
-/** Window title hints for context (reading vs composing). */
-const COMPOSE_TITLE_HINTS = ['compose', 'new message', 'reply', 'forward', 'write']
-const INBOX_TITLE_HINTS = ['inbox', 'mail', 'messages']
 
 export type EmailContextType = 'inbox' | 'reading' | 'composing' | 'unknown'
 
@@ -57,7 +51,7 @@ export class AppContextDetector {
     const nameLower = windowName.toLowerCase()
 
     // Browser: check URL for Gmail/Outlook web
-    if (appId === 'chrome' || appId === 'safari' || appId === 'firefox') {
+    if (appId === 'chrome' || appId === 'safari') {
       let url = await this.platform.getCurrentBrowserUrl()
       const urlToTest = url && !/^https?:\/\//i.test(url) ? 'https://' + url.replace(/^\s+|\s+$/g, '') : url
       const isGmail = urlToTest && GMAIL_URL_PATTERNS.some((p) => p.test(urlToTest))
@@ -66,7 +60,7 @@ export class AppContextDetector {
         return {
           isEmailClientActive: true,
           appId: 'gmail',
-          context: this.inferContextFromTitle(urlToTest, windowName),
+          context: 'unknown',
           browserUrl: url,
           windowName,
         }
@@ -75,7 +69,7 @@ export class AppContextDetector {
         return {
           isEmailClientActive: true,
           appId: 'outlook',
-          context: this.inferContextFromTitle(urlToTest, windowName),
+          context: 'unknown',
           browserUrl: url,
           windowName,
         }
@@ -92,7 +86,7 @@ export class AppContextDetector {
     // Unknown app but window name looks like a browser (e.g. Brave, Chromium): try URL + OCR hints
     const browserLike =
       !appId &&
-      (nameLower.includes('chrome') || nameLower.includes('firefox') || nameLower.includes('safari') ||
+      (nameLower.includes('chrome') || nameLower.includes('safari') ||
        nameLower.includes('edge') || nameLower.includes('brave') || nameLower.includes('browser'))
     if (browserLike) {
       const url = await this.platform.getCurrentBrowserUrl()
@@ -103,7 +97,7 @@ export class AppContextDetector {
         return {
           isEmailClientActive: true,
           appId: 'gmail',
-          context: this.inferContextFromTitle(urlToTest ?? '', windowName),
+          context: 'unknown',
           browserUrl: url,
           windowName,
         }
@@ -112,7 +106,7 @@ export class AppContextDetector {
         return {
           isEmailClientActive: true,
           appId: 'outlook',
-          context: this.inferContextFromTitle(urlToTest ?? '', windowName),
+          context: 'unknown',
           browserUrl: url,
           windowName,
         }
@@ -126,46 +120,13 @@ export class AppContextDetector {
       }
     }
 
-    // Native app: Apple Mail, Outlook desktop
-    if (appId === 'outlook') {
-      return {
-        isEmailClientActive: true,
-        appId: 'outlook',
-        context: this.inferContextFromTitle('', windowName),
-        browserUrl: null,
-        windowName,
-      }
-    }
-    // Apple Mail: "Mail", "Apple Mail", or any process name containing "mail" when not already a browser
-    const isAppleMail =
-      (nameLower === 'mail' || nameLower.includes('apple mail') || (nameLower.includes('mail') && (appId === 'generic' || !appId))) &&
-      appId !== 'chrome' &&
-      appId !== 'safari' &&
-      appId !== 'firefox'
-    if (isAppleMail) {
-      return {
-        isEmailClientActive: true,
-        appId: 'generic',
-        context: this.inferContextFromTitle('', windowName),
-        browserUrl: null,
-        windowName,
-      }
-    }
-
+    // Only mail.google.com and outlook.office.com (browser) are recognised. No desktop apps.
     return {
       isEmailClientActive: false,
-      appId: null,
+      appId: appId ?? null,
       context: 'unknown',
       browserUrl: null,
       windowName,
     }
-  }
-
-  private inferContextFromTitle(url: string, windowTitle: string): EmailContextType {
-    const combined = `${url} ${windowTitle}`.toLowerCase()
-    if (COMPOSE_TITLE_HINTS.some((h) => combined.includes(h))) return 'composing'
-    if (INBOX_TITLE_HINTS.some((h) => combined.includes(h))) return 'inbox'
-    if (url || windowTitle) return 'reading'
-    return 'unknown'
   }
 }

@@ -6,6 +6,8 @@ import type { ActiveWindowInfo } from '../detection/ActiveWindowInfo'
 import { PlatformSpecificManager } from '../integration/PlatformSpecificManager'
 import { WindowTrackerService } from '../services/WindowTrackerService'
 
+const DETECTION_INTERVAL_MS = 2000
+
 export type EmailAppStatus = 'idle' | 'detected' | 'analyzing' | 'threat-found'
 
 export interface DetectionSettings {
@@ -47,7 +49,7 @@ export class DetectionManager {
 
   constructor() {
     const platform = new PlatformSpecificManager()
-    this.activeWindowMonitor = new ActiveWindowMonitor()
+    this.activeWindowMonitor = new ActiveWindowMonitor(platform)
     this.browserMonitor = new BrowserMonitor(this.activeWindowMonitor, platform)
     this.windowTracker = new WindowTrackerService(this.activeWindowMonitor, platform)
     this.contentExtractor = new EmailContentExtractor()
@@ -78,8 +80,8 @@ export class DetectionManager {
         this.notifyListeners()
       }
     })
-    this.refreshTimer = setInterval(() => this.refreshState(), 150)
-    setTimeout(() => this.refreshState(), 200)
+    this.refreshTimer = setInterval(() => this.refreshState(), DETECTION_INTERVAL_MS)
+    setTimeout(() => this.refreshState(), 0)
   }
 
   /**
@@ -119,7 +121,7 @@ export class DetectionManager {
   }
 
   /**
-   * Set URL from capture/OCR when platform URL is unavailable (e.g. Firefox with AppleScript failing).
+   * Set URL from capture/OCR when platform URL is unavailable.
    * Used so dashboard and debug log show OCR-derived URL instead of N/A.
    */
   setLastCaptureUrl(url: string | null): void {
@@ -190,11 +192,11 @@ export class DetectionManager {
   }
 
   getDetectionSettings(): DetectionSettings {
-    return { pollingIntervalMs: 100 }
+    return { pollingIntervalMs: DETECTION_INTERVAL_MS }
   }
 
   updateDetectionSettings(settings: Partial<DetectionSettings>): void {
-    if (typeof settings.pollingIntervalMs === 'number' && settings.pollingIntervalMs >= 50) {
+    if (typeof settings.pollingIntervalMs === 'number' && settings.pollingIntervalMs >= DETECTION_INTERVAL_MS) {
       this.activeWindowMonitor.setPollingInterval(settings.pollingIntervalMs)
     }
   }

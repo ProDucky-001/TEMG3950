@@ -3,7 +3,7 @@ import { EMAIL_APPLICATIONS } from './EmailPatterns'
 import { extractEmailContext, type EmailUrlContext } from './EmailUrlContext'
 import type { PlatformSpecificManager } from '../integration/PlatformSpecificManager'
 
-const DEFAULT_POLLING_INTERVAL_MS = 2000
+const DEFAULT_POLLING_INTERVAL_MS = 1000
 
 export interface IsWebmailResult {
   isWebmail: boolean
@@ -15,7 +15,7 @@ export interface IsWebmailResult {
  * Uses platform-specific methods (macOS AppleScript, Windows PowerShell) first, then falls back to active-win.
  */
 export class BrowserMonitor {
-  private readonly supportedBrowsers = ['chrome', 'safari', 'firefox', 'msedge', 'brave', 'google chrome', 'microsoft edge']
+  private readonly supportedBrowsers = ['chrome', 'safari', 'msedge', 'brave', 'google chrome', 'microsoft edge']
   private pollingIntervalMs = DEFAULT_POLLING_INTERVAL_MS
   private isRunning = false
   private lastUrl: string | null = null

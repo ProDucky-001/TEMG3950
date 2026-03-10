@@ -1,17 +1,11 @@
 import { clipboard, powerMonitor } from 'electron'
-import * as fs from 'fs'
 import { exec } from 'child_process'
 import { promisify } from 'util'
 import type { PlatformName } from '../../shared/integration-types'
 import { logger } from '../services/logger'
+import { normalizeAppName } from '../utils/appNameNormalizer'
 
 const execAsync = promisify(exec)
-const DEBUG_LOG_PATH = '/Users/symok/Desktop/UST1-2/Anti Scam/.cursor/debug-2b6709.log'
-function debugLog(payload: Record<string, unknown>): void {
-  try {
-    fs.appendFileSync(DEBUG_LOG_PATH, JSON.stringify({ sessionId: '2b6709', ...payload, timestamp: Date.now() }) + '\n')
-  } catch (_) {}
-}
 
 export interface ActiveAppInfo {
   name: string
@@ -39,8 +33,6 @@ export class PlatformSpecificManager {
   private readonly platform: PlatformName
   private accessibilityChecked = false
   private accessibilityGranted: boolean | null = null
-  private _loggedFirefoxUrlOnce = false
-  private _loggedFirefoxF1 = false
 
   constructor() {
     this.platform = process.platform as PlatformName
@@ -101,26 +93,69 @@ export class PlatformSpecificManager {
     return null
   }
 
+  /**
+   * Get frontmost app on macOS: prefer NSWorkspace.localizedName for proper display name,
+   * then System Events process name. Always return normalized name (Title Case / bundle map).
+   */
   private async getActiveAppDarwin(): Promise<ActiveAppInfo | null> {
+    let processName = ''
+    let bundleId: string | undefined
+    let source: 'NSWorkspace' | 'System Events' = 'System Events'
+
     try {
       const { stdout } = await execAsync(
-        "osascript -e 'tell application \"System Events\" to get name of first process whose frontmost is true' 2>/dev/null"
+        `osascript -l JavaScript -e '
+ObjC.import("Cocoa");
+var out = "";
+try {
+  var ws = $.NSWorkspace.sharedWorkspace();
+  var app = ws.frontmostApplication();
+  if (app && !app.isEqual($.NSNull.null)) {
+    var n = app.localizedName();
+    var b = app.bundleIdentifier();
+    out = (n ? n.toString() : "") + "|||" + (b ? b.toString() : "");
+  }
+} catch (e) {}
+out;
+' 2>/dev/null`,
+        { timeout: 3000 }
       )
-      const name = (stdout ?? '').trim()
-      if (name) return { name }
+      const line = (stdout ?? '').trim()
+      if (line && line.includes('|||')) {
+        const [name, bid] = line.split('|||')
+        processName = (name ?? '').trim()
+        const b = (bid ?? '').trim()
+        if (b) bundleId = b
+        if (processName) source = 'NSWorkspace'
+      }
     } catch {
-      // Fallback: try using AppleScript alternate
+      // fall through to System Events
+    }
+
+    if (!processName) {
       try {
         const { stdout } = await execAsync(
-          "osascript -e 'tell application \"System Events\" to return name of first application process whose frontmost is true' 2>/dev/null"
+          "osascript -e 'tell application \"System Events\" to get name of first process whose frontmost is true' 2>/dev/null",
+          { timeout: 3000 }
         )
-        const name = (stdout ?? '').trim()
-        if (name) return { name }
+        processName = (stdout ?? '').trim()
       } catch {
-        // ignore
+        try {
+          const { stdout } = await execAsync(
+            "osascript -e 'tell application \"System Events\" to return name of first application process whose frontmost is true' 2>/dev/null",
+            { timeout: 3000 }
+          )
+          processName = (stdout ?? '').trim()
+        } catch {
+          // ignore
+        }
       }
     }
-    return null
+
+    if (!processName) return null
+
+    const name = normalizeAppName(processName, bundleId)
+    return { name, bundleId }
   }
 
   private async getActiveAppWindows(): Promise<ActiveAppInfo | null> {
@@ -246,7 +281,8 @@ export class PlatformSpecificManager {
 
   /**
    * Get the bounds of the frontmost window (for overlays). Returns null if unavailable.
-   * On macOS, pass primaryDisplayHeight to convert AXFrame from Cocoa (bottom-left origin) to top-left.
+   * On macOS: uses AppleScript (System Events → AXFrame, or position/size fallback). Converts Cocoa bottom-left to top-left using primaryDisplayHeight.
+   * Used by OverlayManager for overlay positioning and by ActiveWindowMonitor to supply real bounds for DetectionManager / ScreenCaptureManager.
    */
   async getFrontmostWindowBounds(primaryDisplayHeight?: number): Promise<WindowBounds | null> {
     try {
@@ -263,6 +299,8 @@ export class PlatformSpecificManager {
   }
 
   private async getFrontmostWindowBoundsDarwin(primaryDisplayHeight?: number): Promise<WindowBounds | null> {
+    // All AppleScript sources return logical (DIP) coordinates. AXFrame is (x, yCocoa, width, height); position+size and bounds are (left, top) + size or (left, top, right, bottom).
+    // We always return { x, y, width, height } with width = right - left, height = bottom - top when we have a rect.
     try {
       const { stdout: axOut } = await execAsync(
         `osascript -e 'tell application "System Events"
@@ -278,11 +316,11 @@ export class PlatformSpecificManager {
       const axRaw = (axOut ?? '').trim()
       const axParts = axRaw.split(',').map((n) => parseInt(n, 10))
       if (axParts.length === 4 && !axParts.some((n) => isNaN(n) || n < 0) && axParts[2] >= 50 && axParts[3] >= 50) {
-        const [x, yCocoa, width, height] = axParts
+        const [left, yCocoa, width, height] = axParts
         const y = typeof primaryDisplayHeight === 'number' && primaryDisplayHeight > 0
           ? primaryDisplayHeight - yCocoa - height
           : yCocoa
-        return { x, y, width, height }
+        return { x: left, y, width, height }
       }
     } catch {
       // AXFrame not available
@@ -311,6 +349,34 @@ export class PlatformSpecificManager {
       }
       return { x, y, width, height }
     } catch {
+      // fall through to bounds rect
+    }
+    try {
+      const { stdout } = await execAsync(
+        `osascript -e 'tell application "System Events"
+          set p to first process whose frontmost is true
+          try
+            set w to window 1 of p
+            set b to bounds of w
+            return (item 1 of b) & "," & (item 2 of b) & "," & (item 3 of b) & "," & (item 4 of b)
+          end try
+        end tell' 2>/dev/null`,
+        { timeout: 2000 }
+      )
+      const s = (stdout ?? '').trim()
+      if (!s) return null
+      const parts = s.split(',').map((n) => parseInt(n, 10))
+      if (parts.length !== 4 || parts.some((n) => isNaN(n))) return null
+      const [left, top, right, bottom] = parts
+      const width = right - left
+      const height = bottom - top
+      if (width < 50 || height < 50) return null
+      let y = top
+      if (typeof primaryDisplayHeight === 'number' && primaryDisplayHeight > 0) {
+        y = primaryDisplayHeight - top - height
+      }
+      return { x: left, y, width, height }
+    } catch {
       return null
     }
   }
@@ -335,13 +401,13 @@ export class PlatformSpecificManager {
   }
 
   /**
-   * Get the current tab URL when the frontmost app is a supported browser (macOS).
-   * Returns null if not a browser, permission denied, or unsupported platform.
+   * Get the current tab URL when the frontmost app is Safari or Chrome (macOS).
+   * Returns null if not a supported browser or unsupported platform.
    */
   async getCurrentBrowserUrl(): Promise<string | null> {
     try {
       if (this.platform === 'darwin') {
-        return await this.getCurrentBrowserUrlDarwin()
+        return await this.getBrowserURL()
       }
       if (this.platform === 'win32') {
         return await this.getCurrentBrowserUrlWindows()
@@ -352,191 +418,72 @@ export class PlatformSpecificManager {
     return null
   }
 
-  private async getCurrentBrowserUrlDarwin(): Promise<string | null> {
-    let appName = ''
-    let url = ''
+  /**
+   * Get frontmost process name via System Events (macOS).
+   */
+  private async getActiveBrowser(): Promise<string | null> {
     try {
-      // Single script: get frontmost app and its URL atomically
       const { stdout } = await execAsync(
-        "osascript -e 'set frontApp to \"\"' -e 'set frontUrl to \"\"' -e 'try' -e 'tell application \"System Events\" to set frontApp to name of first process whose frontmost is true' -e 'end try' -e 'if frontApp is not \"\" then' -e 'try' -e 'if (frontApp contains \"Chrome\") or (frontApp contains \"Google\") then' -e 'tell application \"Google Chrome\" to set frontUrl to URL of active tab of front window' -e 'else if (frontApp contains \"Safari\") then' -e 'tell application \"Safari\" to set frontUrl to URL of current tab of front window' -e 'else if (frontApp contains \"Firefox\") then' -e 'tell application \"Firefox\" to set frontUrl to URL of current tab of front window' -e 'else if (frontApp contains \"Edge\") then' -e 'tell application \"Microsoft Edge\" to set frontUrl to URL of active tab of front window' -e 'end if' -e 'end try' -e 'end if' -e 'return frontApp & \"|||\" & frontUrl'",
-        { timeout: 5000 }
+        "osascript -e 'tell application \"System Events\" to get name of first process whose frontmost is true'",
+        { encoding: 'utf8', timeout: 3000 }
       )
-      const combined = (stdout ?? '').trim()
-      const sep = '|||'
-      const idx = combined.indexOf(sep)
-      appName = idx >= 0 ? combined.slice(0, idx).trim() : ''
-      url = idx >= 0 ? combined.slice(idx + sep.length).trim() : ''
-    } catch (_) {
-      // Combined script can throw when Firefox is front; get app name only then try per-browser fallback
-      try {
-        const { stdout: nameOut } = await execAsync(
-          "osascript -e 'tell application \"System Events\" to get name of first process whose frontmost is true' 2>/dev/null",
-          { timeout: 3000 }
-        )
-        appName = (nameOut ?? '').trim()
-      } catch {
-        return null
-      }
-    }
-    if (url && url.startsWith('http')) return url
-    const nameLower = appName.toLowerCase()
-    if (nameLower.includes('firefox')) {
-        // #region agent log
-        if (!this._loggedFirefoxF1) { this._loggedFirefoxF1 = true; fetch('http://127.0.0.1:7799/ingest/2f9d4b64-93fa-4b9d-8d61-3e63f5789b0d',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'2b6709'},body:JSON.stringify({sessionId:'2b6709',location:'PlatformSpecificManager:getCurrentBrowserUrlDarwin',message:'Firefox branch',data:{appName,combinedHasUrl:!!(url&&url.startsWith('http'))},timestamp:Date.now(),hypothesisId:'F1'})}).catch(()=>{}); }
-        // #endregion
-        debugLog({ location: 'PlatformSpecificManager:getCurrentBrowserUrlDarwin', message: 'Firefox branch', data: { appName, combinedHasUrl: !!(url && url.startsWith('http')) }, hypothesisId: 'F1' })
-        const firefoxUrl = await this.getFirefoxUrl()
-        if (firefoxUrl) return firefoxUrl
-        try {
-          const { stdout: out } = await execAsync(
-            'osascript -e \'tell application "Firefox" to get URL of current tab of front window\' 2>/dev/null',
-            { timeout: 3000 }
-          )
-          const u = (out ?? '').trim()
-          if (u && u.startsWith('http')) return u
-          // #region agent log
-          if (!this._loggedFirefoxUrlOnce) { this._loggedFirefoxUrlOnce = true; fetch('http://127.0.0.1:7799/ingest/2f9d4b64-93fa-4b9d-8d61-3e63f5789b0d',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'2b6709'},body:JSON.stringify({sessionId:'2b6709',location:'PlatformSpecificManager:Firefox fallback 1',message:'no URL',data:{preview:u.slice(0,80)},timestamp:Date.now(),hypothesisId:'F2'})}).catch(()=>{}); }
-          // #endregion
-        } catch (e) {
-          // #region agent log
-          if (!this._loggedFirefoxUrlOnce) { this._loggedFirefoxUrlOnce = true; fetch('http://127.0.0.1:7799/ingest/2f9d4b64-93fa-4b9d-8d61-3e63f5789b0d',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'2b6709'},body:JSON.stringify({sessionId:'2b6709',location:'PlatformSpecificManager:Firefox fallback 1',message:'throw',data:{err:String(e)},timestamp:Date.now(),hypothesisId:'F2'})}).catch(()=>{}); }
-          // #endregion
-        }
-        try {
-          const { stdout: out } = await execAsync(
-            'osascript -e \'tell application "Firefox" to get URL of current tab of window 1\' 2>/dev/null',
-            { timeout: 3000 }
-          )
-          const u = (out ?? '').trim()
-          if (u && u.startsWith('http')) return u
-        } catch {
-          // ignore
-        }
-          try {
-            const { stdout: out } = await execAsync(
-              'osascript -e \'tell application "System Events" to get value of combo box 1 of group 1 of toolbar "Navigation" of group 1 of front window of application process "Firefox"\' 2>/dev/null',
-              { timeout: 3000 }
-            )
-          const u = (out ?? '').trim()
-          if (u && u.length > 4) {
-            const url = /^https?:\/\//i.test(u) ? u : 'https://' + u
-            if (url.startsWith('http')) return url
-          }
-        } catch {
-          // System Events URL bar fallback failed (needs Accessibility; Firefox may need accessibility.force_disabled = -1 in about:config)
-        }
-        try {
-          const { stdout: out } = await execAsync(
-            `osascript -l JavaScript -e 'var se = Application("System Events"); var fx = se.processes.whose({name: "Firefox"})[0]; var win = fx.windows[0]; var tb = win.toolbars[0]; var grps = tb.groups(); for (var i = 0; i < grps.length; i++) { try { var tfs = grps[i].textFields(); for (var j = 0; j < tfs.length; j++) { var v = tfs[j].value(); if (v && v.length > 4) { if (/^https?:\\/\\//.test(v)) return v; return "https://" + v; } } } catch(e) {} } ""' 2>/dev/null`,
-            { timeout: 2000 }
-          )
-          const u = (out ?? '').trim()
-          if (u && u.startsWith('http') && u.length > 10) return u
-          // #region agent log
-          if (!this._loggedFirefoxUrlOnce) { this._loggedFirefoxUrlOnce = true; fetch('http://127.0.0.1:7799/ingest/2f9d4b64-93fa-4b9d-8d61-3e63f5789b0d',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'2b6709'},body:JSON.stringify({sessionId:'2b6709',location:'PlatformSpecificManager:Firefox JXA fallback',message:'no URL or short',data:{len:u.length},timestamp:Date.now(),hypothesisId:'F4'})}).catch(()=>{}); }
-          // #endregion
-        } catch (e) {
-          // #region agent log
-          if (!this._loggedFirefoxUrlOnce) { this._loggedFirefoxUrlOnce = true; fetch('http://127.0.0.1:7799/ingest/2f9d4b64-93fa-4b9d-8d61-3e63f5789b0d',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'2b6709'},body:JSON.stringify({sessionId:'2b6709',location:'PlatformSpecificManager:Firefox JXA fallback',message:'throw',data:{err:String(e)},timestamp:Date.now(),hypothesisId:'F4'})}).catch(()=>{}); }
-          // #endregion
-        }
-      }
-      if (nameLower.includes('chrome') || nameLower.includes('google')) {
-        try {
-          const { stdout: out } = await execAsync(
-            'osascript -e \'tell application "Google Chrome" to get URL of active tab of front window\' 2>/dev/null',
-            { timeout: 3000 }
-          )
-          const u = (out ?? '').trim()
-          if (u && u.startsWith('http')) return u
-        } catch {
-          // ignore
-        }
-      }
-      if (nameLower.includes('safari')) {
-        try {
-          const { stdout: out } = await execAsync(
-            'osascript -e \'tell application "Safari" to get URL of current tab of front window\' 2>/dev/null',
-            { timeout: 3000 }
-          )
-          const u = (out ?? '').trim()
-          if (u && u.startsWith('http')) return u
-        } catch {
-          // ignore
-        }
-      }
-      if (nameLower.includes('edge')) {
-        try {
-          const { stdout: out } = await execAsync(
-            'osascript -e \'tell application "Microsoft Edge" to get URL of active tab of front window\' 2>/dev/null',
-            { timeout: 3000 }
-          )
-          const u = (out ?? '').trim()
-          if (u && u.startsWith('http')) return u
-        } catch {
-          // ignore
-        }
-      }
+      return (stdout ?? '').trim() || null
+    } catch {
       return null
-  }
-
-  private async getCurrentBrowserUrlWindows(): Promise<string | null> {
-    return null
+    }
   }
 
   /**
-   * Firefox-specific URL extraction via System Events (address bar).
-   * Tries multiple AppleScript variants because Firefox's accessibility hierarchy varies by version/OS.
-   * Runtime evidence: "toolbar 1" and "group 1 of window 1" can be Invalid index (-1719); use alternatives.
+   * Get URL of front document from Safari (macOS).
    */
-  private async getFirefoxUrl(): Promise<string | null> {
-    const scripts: Array<{ script: string; timeout?: number }> = [
-      {
-        script:
-          'osascript -e \'tell application "System Events" to tell process "Firefox" to get value of combo box 1 of toolbar "Navigation" of front window\' 2>/dev/null',
-        timeout: 3000,
-      },
-      {
-        script:
-          'osascript -e \'tell application "System Events" to tell process "Firefox" to get value of UI element 1 of combo box 1 of toolbar "Navigation" of first group of front window\' 2>/dev/null',
-        timeout: 3000,
-      },
-      {
-        script:
-          'osascript -e \'tell application "System Events" to tell process "Firefox" to get value of first text field of toolbar 1 whose description is "Address and Search Bar"\' 2>/dev/null',
-        timeout: 3000,
-      },
-      {
-        script:
-          'osascript -e \'tell application "System Events" to tell process "Firefox" to get value of combo box 1 of group 1 of toolbar "Navigation" of group 1 of front window\' 2>/dev/null',
-        timeout: 3000,
-      },
-      {
-        script:
-          'osascript -e \'tell application "System Events" to get value of combo box 1 of group 1 of toolbar "Navigation" of group 1 of front window of application process "Firefox"\' 2>/dev/null',
-        timeout: 3000,
-      },
-    ]
-    for (let i = 0; i < scripts.length; i++) {
-      const { script, timeout = 3000 } = scripts[i]
-      try {
-        const { stdout } = await execAsync(script, { timeout })
-        const u = (stdout ?? '').trim()
-        if (u && u.length > 4) {
-          const url = /^https?:\/\//i.test(u) ? u : 'https://' + u
-          if (url.startsWith('http')) {
-            logger.debug('PlatformSpecificManager: getFirefoxUrl succeeded')
-            debugLog({ location: 'PlatformSpecificManager:getFirefoxUrl', message: 'succeeded', data: { index: i, valueLength: u.length }, hypothesisId: 'F7' })
-            return url
-          }
-        }
-        debugLog({ location: 'PlatformSpecificManager:getFirefoxUrl', message: 'no valid url', data: { index: i, valueLength: u.length, preview: u.slice(0, 60) }, hypothesisId: 'F7' })
-      } catch (e) {
-        debugLog({ location: 'PlatformSpecificManager:getFirefoxUrl', message: 'script threw', data: { index: i, error: String(e) }, hypothesisId: 'F7' })
-        // try next variant
-      }
+  private async getSafariURL(): Promise<string | null> {
+    try {
+      const { stdout } = await execAsync(
+        "osascript -e 'tell application \"Safari\" to return URL of front document'",
+        { encoding: 'utf8', timeout: 500 }
+      )
+      const u = (stdout ?? '').trim()
+      return u && u.startsWith('http') ? u : null
+    } catch {
+      return null
     }
-    debugLog({ location: 'PlatformSpecificManager:getFirefoxUrl', message: 'all failed', data: { tried: scripts.length }, hypothesisId: 'F7' })
+  }
+
+  /**
+   * Get URL of active tab of front window from Google Chrome (macOS).
+   */
+  private async getChromeURL(): Promise<string | null> {
+    try {
+      const { stdout } = await execAsync(
+        "osascript -e 'tell application \"Google Chrome\" to return URL of active tab of front window'",
+        { encoding: 'utf8', timeout: 500 }
+      )
+      const u = (stdout ?? '').trim()
+      return u && u.startsWith('http') ? u : null
+    } catch {
+      return null
+    }
+  }
+
+  /**
+   * Get browser URL for Safari or Chrome only (macOS). Checks active app and calls the appropriate extractor.
+   */
+  async getBrowserURL(): Promise<string | null> {
+    if (this.platform !== 'darwin') return null
+    const activeApp = await this.getActiveBrowser()
+    if (!activeApp) return null
+    const name = normalizeAppName(activeApp, undefined)
+    const nameLower = name.toLowerCase()
+    if (nameLower.includes('safari')) {
+      return await this.getSafariURL()
+    }
+    if (nameLower.includes('chrome') || nameLower.includes('google')) {
+      return await this.getChromeURL()
+    }
+    return null
+  }
+
+  private async getCurrentBrowserUrlWindows(): Promise<string | null> {
     return null
   }
 }

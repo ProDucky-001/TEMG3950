@@ -20,7 +20,6 @@ export class FullWidthOCRScanner {
     const offsets: Record<string, number> = {
       chrome: this.isMac ? 55 : 10,
       safari: this.isMac ? 25 : 10,
-      firefox: this.isMac ? 35 : 10,
       edge: this.isMac ? 55 : 10,
       outlook: 80,
       default: 30,
@@ -33,7 +32,6 @@ export class FullWidthOCRScanner {
     const heights: Record<string, number> = {
       chrome: 35,
       safari: 30,
-      firefox: 32,
       edge: 35,
       outlook: 45,
       default: 35,

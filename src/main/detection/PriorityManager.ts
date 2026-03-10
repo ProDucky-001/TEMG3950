@@ -2,16 +2,17 @@ import type { WindowInfo } from './types'
 
 export type DetectionPriority = 'high' | 'medium' | 'low'
 
+/** Poll intervals (ms): high = email app, medium = browser, low = other. Capped by ScreenCaptureManager at 1000ms for sub-1.5s detection. */
 const POLL_INTERVAL_MS: Record<DetectionPriority, number> = {
-  high: 300,
-  medium: 1500,
-  low: 4000,
+  high: 200,
+  medium: 800,
+  low: 1500,
 }
 
 /** Email app types (from appId or process name). */
 const EMAIL_APP_TYPES = new Set(['gmail', 'outlook', 'generic'])
 /** Browser app types that might show email. */
-const BROWSER_APP_TYPES = new Set(['chrome', 'safari', 'firefox'])
+const BROWSER_APP_TYPES = new Set(['chrome', 'safari'])
 
 /**
  * Prioritizes detection based on window/app type and optional content hash to skip unchanged windows.

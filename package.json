@@ -6,10 +6,12 @@
   "author": "ScamShield",
   "license": "MIT",
   "scripts": {
-    "dev": "electron-vite dev",
+    "dev": "node scripts/run-build-then-start.js",
+    "dev:vite": "electron-vite dev",
     "dev:verbose": "ELECTRON_ENABLE_LOGGING=1 electron-vite dev",
     "build": "electron-vite build",
     "start": "electron .",
+    "build:start": "npm run build && npm run start",
     "clean": "node -e \"require('fs').rmSync('out', { recursive: true, force: true })\"",
     "preview": "electron-vite preview",
     "postinstall": "electron-builder install-app-deps",
@@ -18,7 +20,8 @@
     "test:coverage": "jest --coverage",
     "test:e2e": "playwright test",
     "test:perf": "jest --config jest.config.cjs --testPathPattern=\"tests/performance\" --no-cache",
-    "test:firefox-url": "npx ts-node tests/test-firefox-extraction.ts"
+    "test:firefox-url": "npx ts-node tests/test-firefox-extraction.ts",
+    "debug:firefox-ui": "node debug-firefox-ui.js"
   },
   "dependencies": {
     "active-win": "^9.0.0",
@@ -31,6 +34,9 @@
     "recharts": "^2.15.4",
     "sharp": "^0.34.5",
     "tesseract.js": "^5.0.4"
+  },
+  "optionalDependencies": {
+    "@cherrystudio/mac-system-ocr": "^0.2.7"
   },
   "overrides": {
     "electron-store": "8.1.0"
@@ -75,7 +81,9 @@
         "zip"
       ],
       "hardenedRuntime": true,
-      "gatekeeperAssess": false
+      "gatekeeperAssess": false,
+      "entitlements": "build/entitlements.mac.plist",
+      "entitlementsInherit": "build/entitlements.mac.plist"
     },
     "win": {
       "target": [
