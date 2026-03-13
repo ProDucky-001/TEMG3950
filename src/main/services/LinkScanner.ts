@@ -10,7 +10,11 @@ import {
 
 const MAX_RISK_SUM = 100
 
-export type LinkScanOptions = { debugContext?: LinkScanDebugContext }
+export type LinkScanOptions = {
+  debugContext?: LinkScanDebugContext
+  /** When true, skip HTTP redirect resolution for shortener URLs (faster; shorteners still get risk score). */
+  skipShortenerExpansion?: boolean
+}
 
 export class LinkScanner {
   private readonly analyzer: LinkAnalyzer
@@ -25,6 +29,7 @@ export class LinkScanner {
    */
   async scan(url: string, options?: LinkScanOptions): Promise<LinkDetectionResult> {
     const debugContext = options?.debugContext
+    const skipShortenerExpansion = options?.skipShortenerExpansion === true
     const normalized = this.normalizeInput(url)
     if (!normalized) {
       logger.warn('LinkScanner: invalid URL input', url)
@@ -34,8 +39,9 @@ export class LinkScanner {
     }
 
     try {
-      logger.debug('LinkScanner: analyzing URL', normalized)
-      const expanded = await this.expandIfShortener(normalized)
+      const expanded = skipShortenerExpansion
+        ? normalized
+        : await this.expandIfShortener(normalized)
       const { breakdown, threatTypes, explanation, recommendations } =
         this.analyzer.analyze(expanded)
 

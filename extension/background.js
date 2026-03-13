@@ -32,14 +32,16 @@ function reportTabStateToApp(tab) {
 function updateActiveTabState() {
   chrome.tabs.query({ active: true, currentWindow: true }, function(tabs) {
     const tab = tabs[0];
-    if (tab && tab.url && !tab.url.startsWith('chrome://') && !tab.url.startsWith('chrome-extension://')) {
-      reportTabStateToApp(tab);
+    if (!tab || !tab.url) return;
+    if (tab.url.startsWith('chrome://') || tab.url.startsWith('chrome-extension://')) return;
+    reportTabStateToApp(tab);
+    if (!isEmailUrl(tab.url)) {
+      chrome.storage.local.set({ lastScanResult: null }).catch(function() {});
     }
   });
 }
 
 chrome.runtime.onInstalled.addListener(() => {
-  console.log('[ScamDetector] Background loaded');
   updateActiveTabState();
 });
 
@@ -77,10 +79,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   // MAIL_DETECTED: sent once per URL change from content script (not on scroll/mouse)
   if (message.action === 'MAIL_DETECTED') {
     const url = message.url || '';
-    if (url) {
-      console.log('[ScamDetector] MAIL_DETECTED:', url.substring(0, 80));
-      reportTabStateToApp({ url: url });
-    }
+    if (url) reportTabStateToApp({ url: url });
     return false;
   }
 
@@ -100,10 +99,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return false;
   }
 
-  // SCAN_LINKS_REQUEST: content script sends urls; we call app full link scanner and return whether to show warning
+  // SCAN_LINKS_REQUEST: content script sends urls + optional pageText; we call app link scanner and boost risk for email-body phishing phrases
   if (message.action === 'SCAN_LINKS_REQUEST') {
     const urls = message.urls || [];
     const pageUrl = message.pageUrl || '';
+    const pageText = (message.pageText || '').toLowerCase();
     fetch('http://127.0.0.1:8765/scan-links', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -112,15 +112,27 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       .then(function(r) { return r.json(); })
       .then(function(data) {
         const results = data.results || [];
-        const maxRisk = results.length ? Math.max(...results.map(function(r) { return r.riskScore || 0; })) : 0;
-        const warning = maxRisk >= 50;
-        const redFlags = [];
+        let maxRisk = results.length ? Math.max(...results.map(function(r) { return r.riskScore || 0; })) : 0;
+        var urlsWithFindings = results.filter(function(r) { return (r.riskScore || 0) >= 20; }).length;
+        if (urlsWithFindings >= 2 && maxRisk >= 25) {
+          maxRisk = Math.max(maxRisk, 50);
+        }
+        var redFlags = [];
         results.forEach(function(r) {
-          if (r.riskBreakdown && Array.isArray(r.riskBreakdown)) {
-            r.riskBreakdown.forEach(function(b) { redFlags.push(b.reason || b.category); });
-          }
-          if (r.explanation) redFlags.push(r.explanation);
+          if (!r.explanation || r.explanation === 'No issues identified.') return;
+          redFlags.push(r.explanation);
         });
+        var contentBoost = 0;
+        var hasFakeProvider = /\b(zmail|0utlook|out1ook|outlok|gmai1|grnail|gnail|gmal|gmali|gmaill|gmeil|yah00|hotmali)\b/.test(pageText);
+        var hasExpiredReactivate = /\b(expired|reactivate|account\s+.*\s+expired|services?\s+has\s+expired|account\s+services?\s+has\s+expired)\b/.test(pageText);
+        if (hasFakeProvider || hasExpiredReactivate) {
+          contentBoost = 35;
+          if (hasFakeProvider && hasExpiredReactivate) contentBoost = 45;
+          redFlags.push('Detected: Email mentions fake provider (e.g. Zmail, 0utlook) or account expired/reactivate language. Threat categories: phishing.');
+        }
+        maxRisk = Math.min(100, maxRisk + contentBoost);
+        if (contentBoost > 0 && maxRisk < 50) maxRisk = 55;
+        const warning = maxRisk >= 50;
         const lastScanResult = {
           pageUrl: pageUrl,
           warning: warning,

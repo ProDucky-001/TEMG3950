@@ -6,11 +6,11 @@ import {
 
 const WEIGHTS = {
   knownMalicious: 55,
-  suspiciousTld: 35,
+  suspiciousTld: 40,
   typosquatting: 40,
-  urlShortener: 20,
+  urlShortener: 35,
   ipAddress: 30,
-  excessiveSubdomains: 20,
+  excessiveSubdomains: 28,
   encodedChars: 20,
   loginParams: 40,
   cryptoWallet: 35,
@@ -18,6 +18,7 @@ const WEIGHTS = {
   urgencyPhrases: 25,
   prizeLottery: 35,
   brandImpersonation: 45,
+  emailProviderLookalike: 40,
 } as const
 
 const KNOWN_SHORTENERS = new Set([
@@ -72,6 +73,23 @@ const ALLOWLIST_BASE_DOMAINS = new Set([
   'slack.com',
   'notion.so',
   'figma.com',
+])
+
+/** Known email-provider lookalikes (zmail, 0utlook, gmai1, etc.) – hostname stem only. */
+const EMAIL_LOOKALIKE_STEMS = new Set([
+  'zmail',
+  '0utlook',
+  'out1ook',
+  'outlok',
+  'gmai1',
+  'grnail',
+  'gnail',
+  'gmal',
+  'gmali',
+  'gmaill',
+  'gmeil',
+  'yah00',
+  'hotmali',
 ])
 
 const COMMON_BRANDS = new Set([
@@ -218,6 +236,12 @@ export class LinkAnalyzer {
       if (shortenerResult) {
         breakdown.push(shortenerResult)
         threatTypes.add(ThreatType.Suspicious)
+      }
+
+      const emailLookalikeResult = this.checkEmailProviderLookalike(hostname)
+      if (emailLookalikeResult) {
+        breakdown.push(emailLookalikeResult)
+        threatTypes.add(ThreatType.Phishing)
       }
 
       const ipResult = this.checkIpAddress(hostname)
@@ -408,6 +432,18 @@ export class LinkAnalyzer {
     }
   }
 
+  private checkEmailProviderLookalike(hostname: string): RiskBreakdownItem | null {
+    const stem = hostname.replace(/^www\./, '').split('.')[0] ?? ''
+    const stemLower = stem.toLowerCase()
+    if (!EMAIL_LOOKALIKE_STEMS.has(stemLower)) return null
+    return {
+      category: 'Email provider lookalike',
+      score: WEIGHTS.emailProviderLookalike,
+      maxScore: WEIGHTS.emailProviderLookalike,
+      reason: `Domain "${stem}" resembles a known email provider (e.g. Gmail, Outlook); often used in phishing.`,
+    }
+  }
+
   private checkIpAddress(hostname: string): RiskBreakdownItem | null {
     const ipv4 =
       /^(?:(?:25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])\.){3}(?:25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])$/
@@ -545,7 +581,7 @@ export class LinkAnalyzer {
     threatTypes: Set<ThreatType>
   ): string {
     if (breakdown.length === 0) {
-      return 'No specific threats were detected for this link.'
+      return 'No issues identified.'
     }
     const parts = breakdown.map((b) => b.reason)
     const types = Array.from(threatTypes).join(', ')

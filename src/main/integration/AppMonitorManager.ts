@@ -72,11 +72,6 @@ export class AppMonitorManager {
 
     this.powerUnsubscribe = this.platform.onPowerStateChange((state) => {
       this.suspended = state === 'suspend'
-      if (state === 'suspend') {
-        logger.debug('AppMonitorManager: system suspended, pausing analysis')
-      } else {
-        logger.debug('AppMonitorManager: system resumed, continuing monitoring')
-      }
     })
 
     logger.info('AppMonitorManager: monitoring started')

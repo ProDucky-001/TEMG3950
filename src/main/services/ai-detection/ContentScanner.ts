@@ -47,13 +47,6 @@ export class ContentScanner {
       if (trimmed.length > maxLength) {
         result.analysisDetails.push(`Text was truncated to ${maxLength} characters for analysis`)
       }
-      if (result.confidence >= 0.6 || (result.scamIndicators?.length ?? 0) > 0) {
-        logger.debug('ContentScanner: AI or scam indicators', {
-          source,
-          confidence: result.confidence,
-          scamCount: result.scamIndicators?.length ?? 0,
-        })
-      }
       return result
     } catch (err) {
       logger.error('ContentScanner: scan failed', source, err)

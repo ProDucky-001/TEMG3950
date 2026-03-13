@@ -40,23 +40,9 @@ const OVERLAY_STATE_DEBOUNCE_MS = 200
 function emailCacheKey(appName: string): string {
   return (appName ?? '').trim().toLowerCase() || 'unknown'
 }
-const DEBUG_LOG_PATH = '/Users/symok/Desktop/UST1-2/Anti Scam/.cursor/debug-2b6709.log'
 /** Show grey overlay on app window within this time when app is determined (ms).
  * Budget: 100ms poll + 80ms debounce + this delay < 200ms total. */
 const OVERLAY_APP_DETERMINED_DELAY_MS = 10
-/** Structured debug log interval (ms). */
-const DEBUG_LOG_INTERVAL_MS = 2000
-
-function getDebugLogPath(): string {
-  try {
-    const workspaceLog = path.join(process.cwd(), '.cursor', 'debug-detection.log')
-    const dir = path.dirname(workspaceLog)
-    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true })
-    return workspaceLog
-  } catch {
-    return path.join(app.getPath('userData'), 'debug-detection.log')
-  }
-}
 
 export interface ScreenCaptureManagerOptions {
   settingsManager: SettingsManager
@@ -752,7 +738,6 @@ export class ScreenCaptureManager {
       this.overlayStateDebounceTimer = null
       this.lastRenderedOverlayState = newState
       this.sendOverlayState(newState)
-      logger.debug(`[Overlay] Transitioned to: ${newState}`)
     }, OVERLAY_STATE_DEBOUNCE_MS)
   }
 

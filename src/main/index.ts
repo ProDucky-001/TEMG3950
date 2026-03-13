@@ -412,8 +412,17 @@ function startDataRecordedServer(): void {
       req.on('end', async () => {
         try {
           const payload = JSON.parse(body) as { urls?: string[] }
-          const urls = Array.isArray(payload.urls) ? payload.urls.filter((u): u is string => typeof u === 'string') : []
-          const results = await Promise.all(urls.map((url) => linkScanner.scan(url, { debugContext: { isEmail: true, source: 'extension' } })))
+          const rawUrls = Array.isArray(payload.urls) ? payload.urls.filter((u): u is string => typeof u === 'string') : []
+          const MAX_EXTENSION_URLS = 20
+          const urls = rawUrls.slice(0, MAX_EXTENSION_URLS)
+          const results = await Promise.all(
+            urls.map((url) =>
+              linkScanner.scan(url, {
+                debugContext: { isEmail: true, source: 'extension' },
+                skipShortenerExpansion: true,
+              })
+            )
+          )
           res.writeHead(200, { 'Content-Type': 'application/json' })
           res.end(
             JSON.stringify({
@@ -424,6 +433,7 @@ function startDataRecordedServer(): void {
                 explanation: r.explanation,
                 riskBreakdown: r.riskBreakdown,
               })),
+              truncated: rawUrls.length > MAX_EXTENSION_URLS,
             })
           )
         } catch (err) {

@@ -3,7 +3,6 @@
  */
 
 import type { ActiveWindowInfo } from './ActiveWindowInfo'
-import { logger } from '../services/logger'
 
 /**
  * Safely parse a URL and return the hostname (lowercase), or null if invalid.
@@ -50,17 +49,11 @@ export function isEmailUrl(url: string | null | undefined): boolean {
   const lowerUrl = url.toLowerCase()
 
   for (const domain of EMAIL_DOMAINS) {
-    if (lowerUrl.includes(domain)) {
-      logger.debug('[EMAIL DETECT] Matched domain:', domain)
-      return true
-    }
+    if (lowerUrl.includes(domain)) return true
   }
 
   for (const path of EMAIL_PATHS) {
-    if (lowerUrl.includes(path)) {
-      logger.debug('[EMAIL DETECT] Matched path:', path)
-      return true
-    }
+    if (lowerUrl.includes(path)) return true
   }
 
   return false

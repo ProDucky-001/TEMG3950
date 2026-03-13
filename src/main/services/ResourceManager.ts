@@ -1,5 +1,4 @@
 import { powerMonitor } from 'electron'
-import { logger } from './logger'
 
 /** Polling interval when on AC power (ms). */
 const POLL_INTERVAL_AC = 2000
@@ -28,12 +27,10 @@ export class ResourceManager {
       powerMonitor.on('on-ac', () => {
         this._currentIntervalMs = POLL_INTERVAL_AC
         this.onIntervalChange?.(this._currentIntervalMs)
-        logger.debug('ResourceManager: switched to AC interval', this._currentIntervalMs)
       })
       powerMonitor.on('on-battery', () => {
         this._currentIntervalMs = POLL_INTERVAL_BATTERY
         this.onIntervalChange?.(this._currentIntervalMs)
-        logger.debug('ResourceManager: switched to battery interval', this._currentIntervalMs)
       })
       this.batteryUnsubscribe = () => {
         powerMonitor.removeAllListeners('on-ac')

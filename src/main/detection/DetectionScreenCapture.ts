@@ -74,7 +74,6 @@ export class DetectionScreenCapture {
     }
     tick()
     this.intervalId = setInterval(tick, this.captureIntervalMs)
-    logger.debug('DetectionScreenCapture: started')
   }
 
   /**
@@ -89,7 +88,6 @@ export class DetectionScreenCapture {
     this._isEmailActive = null
     this._onCapture = null
     this.lastCaptureHash = null
-    logger.debug('DetectionScreenCapture: stopped')
   }
 
   /**

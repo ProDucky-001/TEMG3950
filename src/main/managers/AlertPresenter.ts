@@ -83,10 +83,7 @@ export class AlertPresenter {
 
     const key = this.groupKey(alert)
     const last = this.groupKeyToLastShown.get(key)
-    if (last && Date.now() - last < GROUP_WINDOW_MS) {
-      logger.debug('AlertPresenter: suppressed duplicate group', key)
-      return true
-    }
+    if (last && Date.now() - last < GROUP_WINDOW_MS) return true
     return false
   }
 

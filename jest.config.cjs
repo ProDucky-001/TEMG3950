@@ -9,6 +9,7 @@ module.exports = {
     'src/main/**/*.ts',
     'src/renderer/**/*.tsx',
     'src/shared/**/*.ts',
+    'src/email-risk/**/*.ts',
     '!src/main/index.ts',
     '!**/*.d.ts',
   ],

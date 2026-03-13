@@ -76,7 +76,6 @@ export class OCREngine {
       try {
         const w = await createWorker('eng', 1, { logger: () => {} })
         this.worker = w
-        logger.debug('OCREngine: worker initialized (local only)')
       } catch (err) {
         logger.error('OCREngine: failed to create worker', err)
         this.initPromise = null

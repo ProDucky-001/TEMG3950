@@ -21,6 +21,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     const flags = lastScanResult.redFlags || [];
     scanRedFlagsEl.innerHTML = flags.length ? '<strong>Red flags:</strong><ul style="margin:4px 0 0; padding-left:16px;">' + flags.map(f => '<li>' + String(f).replace(/</g, '&lt;').substring(0, 120) + '</li>').join('') + '</ul>' : 'None identified';
   } else {
+    scanRiskEl.textContent = 'Risk score: —';
     scanRedFlagsEl.textContent = 'No scan yet. Open an email in Gmail or Outlook.';
   }
 

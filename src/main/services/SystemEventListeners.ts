@@ -42,14 +42,8 @@ export class SystemEventListeners {
   }
 
   private setupPowerMonitor(): void {
-    const onSuspend = () => {
-      logger.debug('SystemEventListeners: system suspend')
-      this.emit('sleep')
-    }
-    const onResume = () => {
-      logger.debug('SystemEventListeners: system resume')
-      this.emit('wake')
-    }
+    const onSuspend = () => this.emit('sleep')
+    const onResume = () => this.emit('wake')
     powerMonitor.on('suspend', onSuspend)
     powerMonitor.on('resume', onResume)
     this.unsubscribePower = () => {
@@ -70,7 +64,7 @@ export class SystemEventListeners {
         defaultSession.off('offline', onOffline)
       }
     } catch (err) {
-      logger.debug('SystemEventListeners: session not available', err)
+      logger.warn('SystemEventListeners: session not available', err)
     }
   }
 }
