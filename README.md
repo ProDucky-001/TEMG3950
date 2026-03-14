@@ -226,3 +226,5 @@ If tray PNGs are missing, the app uses a placeholder.
 ## Author
 
 - [Harunori Kawano](https://harunorikawano.github.io/)
+- [Fan Siu Lung Drake](https://www.linkedin.com/in/siulungfan/)
+- [Mok Sen Yi](https://www.linkedin.com/in/sen-yi-m-2a977528a/)
