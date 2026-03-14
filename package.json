@@ -20,8 +20,7 @@
     "test:coverage": "jest --coverage",
     "test:e2e": "playwright test",
     "test:perf": "jest --config jest.config.cjs --testPathPattern=\"tests/performance\" --no-cache",
-    "test:firefox-url": "npx ts-node tests/test-firefox-extraction.ts",
-    "debug:firefox-ui": "node debug-firefox-ui.js"
+    "test:firefox-url": "npx ts-node tests/test-firefox-extraction.ts"
   },
   "dependencies": {
     "active-win": "^9.0.0",

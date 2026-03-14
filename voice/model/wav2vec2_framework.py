@@ -3,8 +3,8 @@ import random
 import torch
 from torch import nn
 
-from model import Config
-from model.gumbel_vector_quantizer import GumbelVectorQuantizer
+from . import Config
+from .gumbel_vector_quantizer import GumbelVectorQuantizer
 
 
 class Wav2Vec2Framework(nn.Module):

@@ -8,7 +8,7 @@ human-generated or AI-generated (synthetic/TTS) voice.
 import torch
 from torch import nn
 
-from model import Config, Wav2Vec2Framework
+from . import Config, Wav2Vec2Framework
 
 
 def mean_pool_masked(hidden_states: torch.Tensor, lengths: torch.Tensor) -> torch.Tensor:

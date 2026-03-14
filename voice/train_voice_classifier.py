@@ -2,14 +2,9 @@
 Training script for AI vs Human voice classifier.
 
 Usage:
-    python train_voice_classifier.py --human_dir path/to/human_audio --ai_dir path/to/ai_audio
-    python train_voice_classifier.py --data_csv path/to/labels.csv
-
-Data format:
-    - Directory mode: --human_dir and --ai_dir with .wav/.mp3 files
-    - CSV mode: --data_csv with columns [path, label] where label is 0 (human) or 1 (AI)
+    python -m voice.train_voice_classifier --human_dir path/to/human_audio --ai_dir path/to/ai_audio
+    python -m voice.train_voice_classifier --data_csv path/to/labels.csv
 """
-
 import argparse
 import json
 import os
@@ -19,14 +14,12 @@ import torch
 from torch import nn
 from torch.utils.data import Dataset, DataLoader
 
-from model import Config, Wav2Vec2VoiceClassifier
-from example import ExampleFeatureExtractor, ExampleEncoder
-from audio_utils import load_and_extract
+from .model import Config, Wav2Vec2VoiceClassifier
+from .example import ExampleFeatureExtractor, ExampleEncoder
+from .audio_utils import load_and_extract
 
 
 class VoiceDataset(Dataset):
-    """Dataset of (audio_path, label) for human (0) vs AI (1) voice."""
-
     def __init__(self, samples: list[tuple[str, int]]):
         self.samples = samples
 
@@ -40,25 +33,19 @@ class VoiceDataset(Dataset):
 
 
 def collect_from_dirs(human_dir: str, ai_dir: str) -> list[tuple[str, int]]:
-    """Collect (path, label) from human and AI directories."""
     samples = []
     exts = {".wav", ".mp3", ".flac", ".ogg", ".m4a"}
-
     for path in Path(human_dir).rglob("*"):
         if path.suffix.lower() in exts:
             samples.append((str(path), 0))
-
     for path in Path(ai_dir).rglob("*"):
         if path.suffix.lower() in exts:
             samples.append((str(path), 1))
-
     return samples
 
 
 def collect_from_csv(csv_path: str) -> list[tuple[str, int]]:
-    """Collect (path, label) from CSV with columns path, label."""
     import csv
-
     samples = []
     with open(csv_path, encoding="utf-8") as f:
         reader = csv.DictReader(f)
@@ -75,23 +62,19 @@ def train_epoch(model, loader, criterion, optimizer, device):
     total_loss = 0.0
     correct = 0
     total = 0
-
     for features, lengths, labels in loader:
         features = features.to(device)
         lengths = lengths.to(device)
         labels = labels.to(device)
-
         optimizer.zero_grad()
         logits = model(features, lengths)
         loss = criterion(logits, labels)
         loss.backward()
         optimizer.step()
-
         total_loss += loss.item()
         pred = logits.argmax(dim=1)
         correct += (pred == labels).sum().item()
         total += labels.size(0)
-
     return total_loss / len(loader), correct / total if total else 0
 
 
@@ -100,21 +83,17 @@ def eval_epoch(model, loader, criterion, device):
     total_loss = 0.0
     correct = 0
     total = 0
-
     with torch.no_grad():
         for features, lengths, labels in loader:
             features = features.to(device)
             lengths = lengths.to(device)
             labels = labels.to(device)
-
             logits = model(features, lengths)
             loss = criterion(logits, labels)
-
             total_loss += loss.item()
             pred = logits.argmax(dim=1)
             correct += (pred == labels).sum().item()
             total += labels.size(0)
-
     return total_loss / len(loader) if loader else 0, correct / total if total else 0
 
 
@@ -142,7 +121,6 @@ def main():
     if not samples:
         raise ValueError("No audio samples found")
 
-    # Train/val split
     n_val = int(len(samples) * args.val_split)
     n_train = len(samples) - n_val
     train_samples = samples[:n_train]
@@ -192,16 +170,11 @@ def main():
             f"Train Loss: {train_loss:.4f} Acc: {train_acc:.4f} | "
             f"Val Loss: {val_loss:.4f} Acc: {val_acc:.4f}"
         )
-
         if val_acc > best_acc:
             best_acc = val_acc
             save_path = os.path.join(args.save_dir, args.save_name)
             torch.save(
-                {
-                    "model_state_dict": model.state_dict(),
-                    "config": vars(config),
-                    "epoch": epoch,
-                },
+                {"model_state_dict": model.state_dict(), "config": vars(config), "epoch": epoch},
                 save_path,
             )
             print(f"  -> Saved best model to {save_path}")

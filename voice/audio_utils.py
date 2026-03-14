@@ -60,8 +60,6 @@ def _get_ffmpeg_exe() -> str:
 
 def _load_with_torchaudio(path: str) -> tuple[torch.Tensor, int]:
     """Load with torchaudio using a legacy backend only (avoids TorchCodec and its DLL)."""
-    # Never call torchaudio.load() without backend—that can trigger torchcodec and
-    # OSError loading libtorchcodec_core4.dll. Use only soundfile/sox/ffmpeg.
     last_error = None
     for backend in ("soundfile", "sox", "ffmpeg"):
         try:
@@ -91,7 +89,6 @@ def _load_with_ffmpeg(path: str, target_sr: int) -> torch.Tensor:
             check=True,
             capture_output=True,
         )
-        # Read with stdlib wave so we don't depend on torchaudio backends for the temp WAV
         waveform, sr = _read_wav_with_wave(wav_path)
         return waveform, sr
     finally:
@@ -180,7 +177,6 @@ def extract_mel_features(
         f_max=F_MAX,
     )(waveform)
 
-    # Log mel: (1, n_mels, T) -> (1, T, n_mels)
     log_mel = torch.log(mel_spec.clamp(min=1e-5))
     log_mel = log_mel.transpose(1, 2)
 

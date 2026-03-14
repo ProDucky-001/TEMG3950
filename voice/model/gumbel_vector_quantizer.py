@@ -1,7 +1,7 @@
 import torch
 from torch import nn
 
-from model.config import Config
+from .config import Config
 
 
 class GumbelVectorQuantizer(nn.Module):

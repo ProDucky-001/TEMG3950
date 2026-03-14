@@ -6,7 +6,7 @@ Uses the Gustking Wav2Vec2 deepfake model from Hugging Face by default:
 (~93% accuracy on ASVspoof2019, real vs. fake; no local checkpoint needed.)
 
 Example:
-    from voice_bot import VoiceBot
+    from voice.voice_bot import VoiceBot
 
     bot = VoiceBot()
     result = bot.classify("call_recording.mp3")
@@ -21,7 +21,7 @@ _BASE_DIR = Path(__file__).resolve().parent
 
 
 def _create_detector(device: str | None, model_id: str | None = None):
-    from huggingface_detector import HuggingFaceVoiceDetector
+    from voice.huggingface_detector import HuggingFaceVoiceDetector
     return HuggingFaceVoiceDetector(device=device, model_id=model_id)
 
 

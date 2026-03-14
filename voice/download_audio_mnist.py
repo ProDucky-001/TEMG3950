@@ -1,10 +1,9 @@
 """
 Download AudioMNIST human voice WAV files from data/01 (GitHub).
-Use as human voice dataset for finetuning, e.g.:
-  python train_with_my_data.py --human_dir ./data/audio_mnist_human --ai_dir path/to/ai_audio --output_dir ./my_model
+Use as human voice dataset for finetuning.
 
-Run:  python download_audio_mnist.py
-  or:  python download_audio_mnist.py path/to/output_dir
+Run:  python -m voice.download_audio_mnist
+  or:  python -m voice.download_audio_mnist path/to/output_dir
 """
 import os
 import sys
@@ -12,9 +11,10 @@ import urllib.request
 from pathlib import Path
 
 BASE_URL = "https://github.com/soerenab/AudioMNIST/raw/master/data/01"
-# Default: data/audio_mnist_human next to this script
 SCRIPT_DIR = Path(__file__).resolve().parent
-DEFAULT_OUT_DIR = SCRIPT_DIR / "data" / "audio_mnist_human"
+# Default: data/audio_mnist_human at project root (parent of voice/)
+PROJECT_ROOT = SCRIPT_DIR.parent
+DEFAULT_OUT_DIR = PROJECT_ROOT / "data" / "audio_mnist_human"
 
 
 def main():

@@ -1,34 +1,13 @@
 """
 Input your training files and finetune the voice classifier.
 
-Run interactively (prompts for paths):
-    python train_with_my_data.py
-
-Or with command-line arguments:
-    python train_with_my_data.py --human_dir ./human_audio --ai_dir ./ai_audio --output_dir ./my_model
-    python train_with_my_data.py --data_csv labels.csv --output_dir ./my_model
-
-Training data:
-  - Option A: Two folders
-    - Human (real) voice clips → --human_dir
-    - AI-generated (fake) voice clips → --ai_dir
-    - Supported: .wav, .mp3, .flac, .ogg, .m4a
-
-  - Option B: One CSV file
-    - Columns: path (or file/audio), label (0=human, 1=AI)
-    - --data_csv path/to/labels.csv
-
-The script will finetune the Gustking Wav2Vec2 model and save it to --output_dir.
-Then run:  python run_classifier.py --model <output_dir>
+Run:  python -m voice.train_with_my_data --human_dir ./human_audio --ai_dir ./ai_audio --output_dir ./my_model
+  or: python -m voice.train_with_my_data --interactive
 """
-
 import argparse
 import os
 import sys
 from pathlib import Path
-
-# Project root
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 EXTENSIONS = {".wav", ".mp3", ".flac", ".ogg", ".m4a"}
 
@@ -50,11 +29,9 @@ def interactive_prompt():
     if not data_csv and not human_dir and not ai_dir:
         print("Error: provide at least human_dir + ai_dir, or data_csv.")
         return None
-
     if data_csv and not os.path.isfile(data_csv):
         print(f"Error: CSV not found: {data_csv}")
         return None
-
     if human_dir and not os.path.isdir(human_dir):
         print(f"Error: directory not found: {human_dir}")
         return None
@@ -95,13 +72,13 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=__doc__,
     )
-    parser.add_argument("--human_dir", type=str, default=None, help="Folder of human (real) voice samples")
-    parser.add_argument("--ai_dir", type=str, default=None, help="Folder of AI (fake) voice samples")
-    parser.add_argument("--data_csv", type=str, default=None, help="CSV with path,label (0=human, 1=AI)")
-    parser.add_argument("--output_dir", type=str, default="finetuned_voice_model", help="Where to save the model")
-    parser.add_argument("--epochs", type=int, default=3, help="Training epochs")
+    parser.add_argument("--human_dir", type=str, default=None)
+    parser.add_argument("--ai_dir", type=str, default=None)
+    parser.add_argument("--data_csv", type=str, default=None)
+    parser.add_argument("--output_dir", type=str, default="finetuned_voice_model")
+    parser.add_argument("--epochs", type=int, default=3)
     parser.add_argument("--batch_size", type=int, default=8)
-    parser.add_argument("--interactive", action="store_true", help="Prompt for paths interactively")
+    parser.add_argument("--interactive", action="store_true")
     args = parser.parse_args()
 
     if args.interactive or (not args.data_csv and not args.human_dir and not args.ai_dir):
@@ -122,7 +99,7 @@ def main():
             device="cuda",
         )
 
-    from finetune_hf_voice import main as run_finetune
+    from .finetune_hf_voice import main as run_finetune
     run_finetune(args=full)
 
 

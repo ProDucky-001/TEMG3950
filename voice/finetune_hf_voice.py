@@ -3,17 +3,9 @@ Finetune the Hugging Face Wav2Vec2 audio classifier (Gustking model) on your own
 Saves a model you can use with run_classifier.py via --model <output_dir>.
 
 Usage:
-    python finetune_hf_voice.py --human_dir path/to/human_audio --ai_dir path/to/ai_audio --output_dir ./my_model
-    python finetune_hf_voice.py --data_csv path/to/labels.csv --output_dir ./my_model
-
-Data:
-    - Directory: --human_dir (label 0), --ai_dir (label 1); .wav, .mp3, .flac, .ogg, .m4a
-    - CSV: --data_csv with columns path (or file/audio) and label (0=human, 1=AI)
-
-After training, run the classifier with your model:
-    python run_classifier.py --model ./my_model
+    python -m voice.finetune_hf_voice --human_dir path/to/human_audio --ai_dir path/to/ai_audio --output_dir ./my_model
+    python -m voice.finetune_hf_voice --data_csv path/to/labels.csv --output_dir ./my_model
 """
-
 import argparse
 import csv
 import os
@@ -21,7 +13,6 @@ from pathlib import Path
 
 import numpy as np
 
-# Same audio loading as the detector (soundfile + scipy, no torchaudio)
 SAMPLE_RATE = 16000
 
 
@@ -145,7 +136,6 @@ def main(args=None):
         TrainingArguments,
     )
 
-    # Build dataset dict: audio array + sampling_rate + label
     def gen():
         for path, label in samples:
             try:
@@ -159,30 +149,23 @@ def main(args=None):
         raise SystemExit("No samples could be loaded.")
     dataset = Dataset.from_list(rows)
 
-    # Train/val split
     dataset = dataset.train_test_split(test_size=args.val_split, seed=42, stratify_by_column="label")
     train_ds = dataset["train"]
     eval_ds = dataset["test"]
 
-    # Load model and processor
     model_id = args.model_id
     feature_extractor = AutoFeatureExtractor.from_pretrained(model_id)
-    model = AutoModelForAudioClassification.from_pretrained(
-        model_id,
-        num_labels=2,
-    )
-    # Ensure label mapping matches (real=0, fake=1)
+    model = AutoModelForAudioClassification.from_pretrained(model_id, num_labels=2)
     if not hasattr(model.config, "id2label") or model.config.id2label is None:
         model.config.id2label = {0: "real", 1: "fake"}
         model.config.label2id = {"real": 0, "fake": 1}
 
     import torch
 
-    max_length_samples = int(feature_extractor.sampling_rate * 30)  # 30 s
+    max_length_samples = int(feature_extractor.sampling_rate * 30)
 
     def data_collator(features):
         audio_arrays = [f["audio"]["array"] for f in features]
-        sampling_rates = [f["audio"]["sampling_rate"] for f in features]
         batch = feature_extractor(
             audio_arrays,
             sampling_rate=feature_extractor.sampling_rate,

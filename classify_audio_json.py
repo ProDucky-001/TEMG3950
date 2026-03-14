@@ -1,21 +1,15 @@
 """
-Output-only JSON for voice classification. Used by the Electron app.
+JSON output for voice classification (used by Electron app). Launcher; logic in voice.classify_audio_json.
 
 Usage: python classify_audio_json.py <path_to_audio>
-Prints one JSON object to stdout: {"label":"human"|"ai","prob_human":float,"prob_ai":float,"checkpoint_loaded":bool}
-
-Uses the same Gustking Wav2Vec2 model as run_classifier.py (voice_bot + huggingface_detector).
+Prints one JSON line: {"label":"human"|"ai","prob_human":float,"prob_ai":float,"checkpoint_loaded":bool}
 """
-import warnings
-warnings.filterwarnings("ignore", category=FutureWarning)
-
 import importlib.util
-import json
+import os
 import sys
 import types
 
-# Stub torchcodec/torchaudio so DLLs are never loaded when the app runs this script
-# (same as run_classifier.py; audio is loaded with soundfile+scipy in huggingface_detector).
+# Stub torchcodec/torchaudio before any voice import (same as run_classifier.py).
 def _tc_dummy(name):
     m = types.ModuleType(name)
     m.__spec__ = importlib.util.spec_from_loader(name, loader=None, is_package=False)
@@ -39,7 +33,6 @@ _tc.__file__ = "<stub torchcodec>"
 _tc.__package__ = "torchcodec"
 _tc._core = _tc_core
 _tc.decoders = _tc_decoders
-
 sys.modules["torchcodec"] = _tc
 sys.modules["torchcodec._core"] = _tc_core
 sys.modules["torchcodec._core.ops"] = _tc_ops
@@ -57,23 +50,9 @@ if "torchaudio" not in sys.modules:
     sys.modules["torchaudio"] = _stub
     sys.modules["torchaudio.transforms"] = _stub.transforms
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-def main():
-    if len(sys.argv) < 2:
-        print(json.dumps({"error": "Missing audio path"}), flush=True)
-        sys.exit(1)
-    path = sys.argv[1].strip().strip('"').strip("'")
-    try:
-        import torch
-        device = "cuda" if torch.cuda.is_available() else None
-        from voice_bot import VoiceBot
-        bot = VoiceBot(device=device)
-        result = bot.classify(path)
-        print(json.dumps(result), flush=True)
-    except Exception as e:
-        print(json.dumps({"error": str(e), "label": "error"}), flush=True)
-        sys.exit(1)
-
+from voice.classify_audio_json import main
 
 if __name__ == "__main__":
     main()

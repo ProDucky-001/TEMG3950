@@ -30,8 +30,6 @@ const devServerUrl = process.env.ELECTRON_RENDERER_URL || process.env.ELECTRON_V
 const DEFAULT_POLL_INTERVAL_MS = 3000
 /** TTL for per-app "last email URL" cache when tab has no URL (ms). */
 const LAST_EMAIL_URL_TTL_MS = 8_000
-/** TTL for extension-reported tab state (URL + isEmail) used for overlay (ms). */
-const EXTENSION_TAB_STATE_TTL_MS = 3_000
 /** Timeout when fetching browser URL via native bridge (ms). */
 const BROWSER_URL_FETCH_TIMEOUT_MS = 2_500
 /** Debounce: only send overlay state after it persists this long (ms). */
@@ -547,6 +545,11 @@ export class ScreenCaptureManager {
   }
 
   private async updateOverlayVisibility(): Promise<void> {
+    /** TTL for extension-reported tab state (ms). Defined in method so bundler keeps it in scope. */
+    const EXTENSION_TAB_STATE_TTL_MS = 3_000
+    // #region agent log
+    fetch('http://127.0.0.1:7838/ingest/ab5504c1-8998-4ac8-953b-cade1bd82d6b', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '68dce1' }, body: JSON.stringify({ sessionId: '68dce1', location: 'ScreenCaptureManager.ts:updateOverlayVisibility', message: 'using local TTL', data: { ttlMs: EXTENSION_TAB_STATE_TTL_MS }, timestamp: Date.now(), hypothesisId: 'H1' }) }).catch(() => {})
+    // #endregion
     if (this.overlayUpdateInProgress) return
     this.overlayUpdateInProgress = true
     try {
