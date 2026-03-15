@@ -1,4 +1,4 @@
-# ScamShield / Scam Copilot
+# Anti-Scam AI Copilot
 
 System tray application with background monitoring for scam and phishing detection, plus **Human vs AI voice classification** (Wav2Vec2). Built with **Electron**, **TypeScript**, **React**, and **Python**.
 
